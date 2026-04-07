@@ -1,4 +1,10 @@
 # Grok AI
-DOMAIN, api.x.ai
 DOMAIN-SUFFIX, x.ai
 DOMAIN-SUFFIX, grok.com
+DOMAIN-SUFFIX, featureassets.org
+DOMAIN-SUFFIX, xai.chronosphere.io
+
+# 可选：更严格的单域名匹配（防止误杀）
+DOMAIN, grok.x.ai
+DOMAIN, api.x.ai
+DOMAIN, chat.grok.com
