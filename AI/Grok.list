@@ -1,0 +1,4 @@
+# Compatibility mirror. New profiles use rules/production/ai/Grok.list.
+# Last reviewed: 2026-07-14
+DOMAIN-SUFFIX,x.ai
+DOMAIN-SUFFIX,grok.com

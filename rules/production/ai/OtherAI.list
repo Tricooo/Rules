@@ -1,4 +1,5 @@
-# Deprecated filename with a space. New profiles use rules/production/ai/OtherAI.list.
+# Purpose: Small AI services that do not justify a dedicated Surge policy.
+# Sources: service-owned domains and existing user-observed endpoints.
 # Last reviewed: 2026-07-14
 # Dia
 DOMAIN-SUFFIX,diabrowser.engineering

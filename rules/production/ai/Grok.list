@@ -1,0 +1,5 @@
+# Purpose: xAI Grok service-owned domains only.
+# Sources: https://x.ai/ and https://grok.com/
+# Last reviewed: 2026-07-14
+DOMAIN-SUFFIX,x.ai
+DOMAIN-SUFFIX,grok.com

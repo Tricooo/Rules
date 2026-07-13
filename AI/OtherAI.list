@@ -1,4 +1,4 @@
-# Deprecated filename with a space. New profiles use rules/production/ai/OtherAI.list.
+# Compatibility mirror. New profiles use rules/production/ai/OtherAI.list.
 # Last reviewed: 2026-07-14
 # Dia
 DOMAIN-SUFFIX,diabrowser.engineering
