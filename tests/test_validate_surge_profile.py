@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from scripts.validate_surge_profile import validate_profile
+
+
+BASE_IOS_PROFILE = """[General]
+skip-proxy = 127.0.0.1, 10.0.0.0/8, 100.64.0.0/10
+tun-excluded-routes = 10.0.0.0/8, 100.64.0.0/10, 224.0.0.0/4
+encrypted-dns-follow-outbound-mode = false
+
+[Proxy]
+Direct-AI = direct
+CF = direct
+CF-us = direct
+CF-us-AI = direct
+
+[Proxy Group]
+AI Egress = select, Direct-AI, CF-AI-Auto, US Node
+ChatGPT = select, AI Egress
+Claude = select, AI Egress
+Gemini = select, AI Egress
+GitHub Copilot = select, AI Egress
+Perplexity = select, AI Egress
+Other AI = select, AI Egress
+Grok = select, AI Egress
+Apple Intelligence = select, AI Egress, US Node
+iCloud Private = select, Direct-AI
+Apple = select, DIRECT
+US Node = smart, Direct-AI, policy-regex-filter=🇺🇸
+My Node = subnet, default = DIRECT, TYPE:CELLULAR = DIRECT, SSID:Entrance = DIRECT
+Cloudflare Auto = smart, include-all-proxies=true, policy-regex-filter=(?i)^(?:CF|CF-(?!.*-AI$).+)$
+CF-AI-Auto = smart, include-all-proxies=true, policy-regex-filter=(?i)^CF-.*-AI$
+Final = select, DIRECT, My Node
+
+[Rule]
+RULE-SET,https://example.invalid/iCloudPrivateRelay.list,iCloud Private
+DOMAIN-SUFFIX,chatgpt.com,ChatGPT
+DOMAIN-SUFFIX,claude.ai,Claude
+DOMAIN-SUFFIX,gemini.google.com,Gemini
+DOMAIN-SUFFIX,copilot.microsoft.com,GitHub Copilot
+DOMAIN-SUFFIX,grok.com,Grok
+DOMAIN-SUFFIX,perplexity.ai,Perplexity
+DOMAIN-SUFFIX,mistral.ai,Other AI
+DOMAIN,guzzoni.apple.com,Apple Intelligence
+DOMAIN-SUFFIX,smoot.apple.com,Apple Intelligence
+DOMAIN-SUFFIX,apple-relay.apple.com,Apple Intelligence
+DOMAIN-SUFFIX,apple-relay.cloudflare.com,Apple Intelligence
+DOMAIN-SUFFIX,apple-relay.fastly-edge.com,Apple Intelligence
+DOMAIN,cp4.cloudflare.com,Apple Intelligence
+DOMAIN-SUFFIX,siri.apple.com,Apple Intelligence
+RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple
+GEOIP,CN,DIRECT
+FINAL,Final
+"""
+
+
+def build_mac_profile() -> str:
+    profile = BASE_IOS_PROFILE.replace(
+        "My Node = subnet, default = DIRECT, TYPE:CELLULAR = DIRECT, SSID:Entrance = DIRECT",
+        "Auto-SSID = subnet, default = DIRECT, SSID:Entrance = DIRECT\n"
+        "My Node = select, Auto-SSID, DIRECT",
+    ).replace(
+        "Final = select, DIRECT, My Node",
+        "Final = select, My Node, DIRECT",
+    ).replace(
+        "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple",
+        "PROCESS-NAME,assistantd,Apple Intelligence\n"
+        "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple",
+    )
+    emoji_names = {
+        "AI Egress": "🧠 AI Egress",
+        "ChatGPT": "🫧 ChatGPT",
+        "Claude": "🌼 Claude",
+        "Gemini": "✨ Gemini",
+        "GitHub Copilot": "✈️ GitHub Copilot",
+        "Perplexity": "🔮 Perplexity",
+        "Other AI": "🤖 Other AI",
+        "Grok": "🔥 Grok",
+        "Apple Intelligence": "🌈 Apple Intelligence",
+        "iCloud Private": "🛡️ iCloud Private",
+        "Apple": "🍎 Apple",
+        "US Node": "🇺🇸 US Node",
+        "Auto-SSID": "🎛️ Auto-SSID",
+        "My Node": "🫟 My Node",
+        "Cloudflare Auto": "🎲 Cloudflare Auto",
+        "CF-AI-Auto": "☁️ CF-AI-Auto",
+        "Final": "🧭 Final",
+    }
+    for plain, decorated in emoji_names.items():
+        profile = profile.replace(plain, decorated)
+    return profile.replace("🌈 🍎 Apple Intelligence", "🌈 Apple Intelligence").replace(
+        "https://example.invalid/🍎 Apple_All_No_Resolve.list",
+        "https://example.invalid/Apple_All_No_Resolve.list",
+    )
+
+
+class ValidateSurgeProfileTest(unittest.TestCase):
+    def validate(self, content: str, platform: str = "ios") -> tuple[list[str], list[str]]:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "profile.conf"
+            path.write_text(content, encoding="utf-8")
+            errors, warnings, _ = validate_profile(path, platform)
+        return errors, warnings
+
+    def test_contract_fixture_is_valid(self) -> None:
+        errors, _ = self.validate(BASE_IOS_PROFILE)
+        self.assertEqual([], errors)
+
+    def test_mac_contract_fixture_is_valid(self) -> None:
+        errors, _ = self.validate(build_mac_profile(), "mac")
+        self.assertEqual([], errors)
+
+    def test_mac_emoji_variation_selector_is_accepted(self) -> None:
+        profile = build_mac_profile().replace("🔥 Grok", "Ⓜ️ Grok")
+        errors, _ = self.validate(profile, "mac")
+        self.assertEqual([], errors)
+
+    def test_mac_group_without_emoji_is_rejected(self) -> None:
+        profile = build_mac_profile().replace("🔥 Grok", "Grok")
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("must retain Emoji" in item for item in errors))
+
+    def test_mac_apple_intelligence_keeps_assistantd(self) -> None:
+        profile = build_mac_profile()
+        assistant_rule = "PROCESS-NAME,assistantd,🌈 Apple Intelligence\n"
+        errors, _ = self.validate(profile.replace(assistant_rule, ""), "mac")
+        self.assertTrue(any("PROCESS-NAME,assistantd" in item for item in errors))
+
+    def test_apple_network_must_not_be_skipped(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "skip-proxy = 127.0.0.1, 10.0.0.0/8, 100.64.0.0/10",
+            "skip-proxy = 127.0.0.1, 10.0.0.0/8, 17.0.0.0/8, 100.64.0.0/10",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("17.0.0.0/8" in item for item in errors))
+
+    def test_broad_rule_must_follow_ai(self) -> None:
+        apple_rule = "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple\n"
+        profile = BASE_IOS_PROFILE.replace(apple_rule, "")
+        profile = profile.replace("[Rule]\n", "[Rule]\n" + apple_rule)
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("broad/direct/filter rules" in item for item in errors))
+
+    def test_china_ip_and_geoip_must_not_stack(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "GEOIP,CN,DIRECT",
+            "RULE-SET,https://example.invalid/ChinaIp.list,DIRECT\nGEOIP,CN,DIRECT",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("ChinaIp.list duplicates" in item for item in errors))
+
+    def test_unused_composite_group_is_rejected(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Final = select, DIRECT, My Node",
+            'Asia = smart, include-other-group="US Node"\nFinal = select, DIRECT, My Node',
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("unused composite policy group Asia" in item for item in errors))
+
+    def test_ai_service_must_default_to_ai_egress(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "ChatGPT = select, AI Egress",
+            "ChatGPT = select, DIRECT, AI Egress",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("ChatGPT must use AI Egress" in item for item in errors))
+
+    def test_include_other_group_must_be_quoted(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Final = select, DIRECT, My Node",
+            "Non-HK = smart, include-other-group=US Node,My Node\nFinal = select, DIRECT, My Node",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("must be one quoted comma-separated value" in item for item in errors))
+
+    def test_taiwan_group_rejects_samoa_flag(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "US Node = smart, Direct-AI, policy-regex-filter=🇺🇸",
+            "US Node = smart, Direct-AI, policy-regex-filter=🇺🇸\n"
+            "TW Node = smart, Direct-AI, policy-regex-filter=🇼🇸",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("Samoa flag" in item for item in errors))
+
+    def test_retired_webshare_proxy_is_rejected(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Direct-AI = direct",
+            "Direct-AI = direct\nwebshare = http, example.invalid, 8080",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("retired Webshare proxy" in item for item in errors))
+
+    def test_normal_cf_group_must_include_base_proxy(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "policy-regex-filter=(?i)^(?:CF|CF-(?!.*-AI$).+)$",
+            "policy-regex-filter=(?i)^CF-(?!.*-AI$).+$",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("does not include the base CF proxy" in item for item in errors))
+
+
+if __name__ == "__main__":
+    unittest.main()

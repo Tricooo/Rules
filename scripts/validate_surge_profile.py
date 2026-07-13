@@ -52,11 +52,54 @@ FORBIDDEN_INLINE_AI_SUFFIXES = {
     "googleusercontent.com",
 }
 
+APPLE_AI_BASELINE = {
+    ("DOMAIN", "guzzoni.apple.com"),
+    ("DOMAIN-SUFFIX", "smoot.apple.com"),
+    ("DOMAIN-SUFFIX", "apple-relay.apple.com"),
+    ("DOMAIN-SUFFIX", "apple-relay.cloudflare.com"),
+    ("DOMAIN-SUFFIX", "apple-relay.fastly-edge.com"),
+    ("DOMAIN", "cp4.cloudflare.com"),
+    ("DOMAIN-SUFFIX", "siri.apple.com"),
+}
+
+AI_POLICY_SUFFIXES = (
+    "iCloud Private",
+    "ChatGPT",
+    "Claude",
+    "Gemini",
+    "GitHub Copilot",
+    "Grok",
+    "Apple Intelligence",
+    "Perplexity",
+    "Other AI",
+)
+
+BROAD_PRIORITY_MARKERS = (
+    "/Advertising",
+    "/Privacy/",
+    "ChinaDomain.list",
+    "ChinaCompanyIp.list",
+    "ChinaIp.list",
+    "surge-rules/release/direct.txt",
+    "Apple_All_No_Resolve.list",
+)
+
+REGION_FLAGS = {
+    "HK Node": "🇭🇰",
+    "TW Node": "🇹🇼",
+    "JP Node": "🇯🇵",
+    "SG Node": "🇸🇬",
+    "US Node": "🇺🇸",
+    "UK Node": "🇬🇧",
+    "MY Node": "🇲🇾",
+}
+
 EMOJI_RE = re.compile(
     "["
     "\U0001F1E6-\U0001F1FF"
     "\U0001F300-\U0001FAFF"
     "\u2600-\u27BF"
+    "\uFE0F"
     "]"
 )
 
@@ -147,6 +190,35 @@ def selector_policy(token: str) -> str | None:
     return None
 
 
+def find_named_suffix(entries: dict[str, tuple[int, str]], suffix: str) -> str | None:
+    if suffix in entries:
+        return suffix
+    matches = [name for name in entries if name.endswith(suffix)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def group_members(value: str) -> list[str]:
+    members: list[str] = []
+    for token in split_fields(value)[1:]:
+        token = token.strip().strip('"')
+        if token and "=" not in token:
+            members.append(token)
+    return members
+
+
+def group_parameter(value: str, key: str) -> str | None:
+    prefix = key.lower() + "="
+    for token in split_fields(value)[1:]:
+        normalized = token.strip().strip('"')
+        if normalized.lower().startswith(prefix):
+            return normalized.split("=", 1)[1].strip().strip('"')
+    return None
+
+
+def policy_has_suffix(policy: str, suffix: str) -> bool:
+    return policy == suffix or policy.endswith(suffix)
+
+
 def extract_group_references(
     groups: dict[str, tuple[int, str]],
 ) -> tuple[dict[str, set[str]], list[str]]:
@@ -219,6 +291,11 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
     errors.extend(reference_errors)
     defined_policies = set(proxies) | set(groups) | BUILTIN_POLICIES
 
+    general, general_errors = parse_named_entries(sections.get("General", []), "general option")
+    errors.extend(general_errors)
+    mitm, mitm_errors = parse_named_entries(sections.get("MITM", []), "MITM option")
+    errors.extend(mitm_errors)
+
     for group_name, refs in references.items():
         line_no = groups[group_name][0]
         for ref in sorted(refs):
@@ -227,14 +304,25 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
 
     errors.extend(detect_cycles(references, set(groups)))
 
+    for group_name, (line_no, value) in groups.items():
+        if "include-other-group" in value.lower() and not re.search(
+            r'include-other-group\s*=\s*"[^"]+"', value, re.IGNORECASE
+        ):
+            errors.append(
+                f"line {line_no}: include-other-group in {group_name} must be one quoted comma-separated value"
+            )
+
     if platform == "ios":
         for name, (line_no, _) in groups.items():
             if EMOJI_RE.search(name):
                 errors.append(f"line {line_no}: iOS policy-group name contains Emoji: {name}")
-    elif not any(EMOJI_RE.search(name) for name in groups):
-        warnings.append("macOS profile has no Emoji policy-group names")
+    else:
+        for name, (line_no, _) in groups.items():
+            if not EMOJI_RE.search(name):
+                errors.append(f"line {line_no}: macOS policy-group name must retain Emoji: {name}")
 
     rules = active_lines(sections.get("Rule", []))
+    rule_records: list[tuple[int, str, list[str], str]] = []
     seen_rules: dict[str, int] = {}
     for line_no, line in rules:
         fields = split_fields(line)
@@ -255,6 +343,7 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             errors.append(f"line {line_no}: malformed {rule_type} rule")
             continue
         policy = fields[policy_index].strip().strip('"')
+        rule_records.append((line_no, rule_type, fields, policy))
         if policy not in defined_policies:
             errors.append(f"line {line_no}: rule references undefined policy {policy}")
 
@@ -282,6 +371,250 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
         errors.append("[Rule] has no active rules")
     elif split_fields(rules[-1][1])[0].upper() != "FINAL":
         errors.append(f"line {rules[-1][0]}: last active rule must be FINAL")
+
+    webshare_names = [name for name in proxies if "webshare" in name.lower()]
+    for name in webshare_names:
+        errors.append(f"line {proxies[name][0]}: retired Webshare proxy is still active")
+
+    skip_proxy = general.get("skip-proxy")
+    if skip_proxy and "17.0.0.0/8" in split_fields(skip_proxy[1]):
+        errors.append(
+            f"line {skip_proxy[0]}: skip-proxy must not bypass Apple's entire 17.0.0.0/8 network"
+        )
+
+    encrypted_follow = general.get("encrypted-dns-follow-outbound-mode")
+    if encrypted_follow and encrypted_follow[1].strip().lower() != "false":
+        warnings.append(
+            f"line {encrypted_follow[0]}: encrypted DNS now follows outbound mode; verify bootstrap and DNS policy"
+        )
+
+    tun_excluded = general.get("tun-excluded-routes")
+    if tun_excluded:
+        excluded = {item.strip() for item in split_fields(tun_excluded[1])}
+        if {"224.0.0.0/4", "239.0.0.0/8"} <= excluded:
+            errors.append(
+                f"line {tun_excluded[0]}: 239.0.0.0/8 is redundant when 224.0.0.0/4 is excluded"
+            )
+
+    for option in ("http-listen", "socks5-listen"):
+        listen = general.get(option)
+        if platform == "ios" and listen:
+            errors.append(f"line {listen[0]}: {option} is a macOS-only listener in this profile contract")
+        elif listen and not re.fullmatch(r"127\.0\.0\.1:\d+", listen[1].strip()):
+            errors.append(f"line {listen[0]}: {option} must bind to 127.0.0.1 with an explicit port")
+    if platform == "ios" and "read-etc-hosts" in general:
+        errors.append(
+            f"line {general['read-etc-hosts'][0]}: read-etc-hosts is not part of the iOS profile contract"
+        )
+
+    if mitm and "hostname" not in mitm:
+        warnings.append(
+            "[MITM] contains CA material but the profile declares no hostname; modules may add targets, and all CA values must be redacted before sharing"
+        )
+
+    ai_egress = find_named_suffix(groups, "AI Egress")
+    if ai_egress is None:
+        errors.append("missing AI Egress policy group")
+    else:
+        members = group_members(groups[ai_egress][1])
+        if not members or not members[0].endswith("Direct-AI"):
+            errors.append(
+                f"line {groups[ai_egress][0]}: AI Egress must default to the stable Direct-AI policy"
+            )
+        for suffix in (
+            "ChatGPT",
+            "Claude",
+            "Gemini",
+            "GitHub Copilot",
+            "Perplexity",
+            "Other AI",
+            "Grok",
+            "Apple Intelligence",
+        ):
+            name = find_named_suffix(groups, suffix)
+            if name is None:
+                errors.append(f"missing {suffix} policy group")
+                continue
+            service_members = group_members(groups[name][1])
+            if not service_members or service_members[0] != ai_egress:
+                errors.append(
+                    f"line {groups[name][0]}: {name} must use {ai_egress} as its first policy"
+                )
+
+    final_group = find_named_suffix(groups, "Final")
+    if final_group is None:
+        errors.append("missing Final policy group")
+    else:
+        final_members = group_members(groups[final_group][1])
+        if not final_members:
+            errors.append(f"line {groups[final_group][0]}: Final policy group has no policies")
+        elif platform == "ios" and final_members[0] != "DIRECT":
+            errors.append(f"line {groups[final_group][0]}: iOS Final must default to DIRECT")
+        elif platform == "mac" and not final_members[0].endswith("My Node"):
+            errors.append(f"line {groups[final_group][0]}: macOS Final must default to My Node")
+        if final_members and any(
+            policy_has_suffix(final_members[0], suffix)
+            for suffix in ("ChatGPT", "AI Egress", "Apple Intelligence")
+        ):
+            errors.append(f"line {groups[final_group][0]}: Final must not default to an AI policy")
+
+    for suffix, expected_flag in REGION_FLAGS.items():
+        name = find_named_suffix(groups, suffix)
+        if name is None:
+            continue
+        value = groups[name][1]
+        if expected_flag not in value:
+            errors.append(f"line {groups[name][0]}: {name} is missing region flag {expected_flag}")
+        if suffix == "TW Node" and "🇼🇸" in value:
+            errors.append(f"line {groups[name][0]}: Taiwan group contains the Samoa flag")
+        if re.search(r"(?:^|[|(])(?:港|台|新)(?=[|)])", value):
+            errors.append(f"line {groups[name][0]}: {name} contains an over-broad single-character region match")
+
+    for group_name, (line_no, _) in groups.items():
+        if group_name.endswith(("Asia", "Western")):
+            used_by_group = any(group_name in refs for refs in references.values())
+            used_by_rule = any(policy == group_name for _, _, _, policy in rule_records)
+            if not used_by_group and not used_by_rule:
+                errors.append(f"line {line_no}: unused composite policy group {group_name}")
+
+    if platform == "ios":
+        my_node = find_named_suffix(groups, "My Node")
+        if my_node is None:
+            errors.append("missing iOS My Node subnet group")
+        else:
+            value = groups[my_node][1]
+            fields = split_fields(value)
+            if not fields or fields[0].lower() != "subnet":
+                errors.append(f"line {groups[my_node][0]}: iOS My Node must be a subnet group")
+            for selector in ("TYPE:CELLULAR", "SSID:Entrance"):
+                if selector not in value:
+                    errors.append(f"line {groups[my_node][0]}: iOS My Node is missing {selector}")
+    else:
+        auto_ssid = find_named_suffix(groups, "Auto-SSID")
+        my_node = find_named_suffix(groups, "My Node")
+        if auto_ssid is None or split_fields(groups[auto_ssid][1])[0].lower() != "subnet":
+            errors.append("macOS Auto-SSID must be a subnet group")
+        else:
+            value = groups[auto_ssid][1]
+            if "SSID:Entrance" not in value:
+                errors.append(f"line {groups[auto_ssid][0]}: macOS Auto-SSID is missing SSID:Entrance")
+            if "BSSID:" in value:
+                warnings.append(
+                    f"line {groups[auto_ssid][0]}: BSSID selector is device-specific; confirm the old company Wi-Fi is still used"
+                )
+        if my_node is None or not group_members(groups[my_node][1]):
+            errors.append("macOS My Node must reference Auto-SSID")
+        elif group_members(groups[my_node][1])[0] != auto_ssid:
+            errors.append(f"line {groups[my_node][0]}: macOS My Node must default to Auto-SSID")
+
+    normal_cf_group = find_named_suffix(groups, "Cloudflare Auto" if platform == "ios" else "CF-Auto")
+    ai_cf_group = find_named_suffix(groups, "CF-AI-Auto")
+    base_cf = next((name for name in proxies if name == "CF" or name.endswith(" CF")), None)
+    ai_proxy = next((name for name in proxies if "CF-" in name and name.endswith("-AI")), None)
+    if normal_cf_group and base_cf:
+        pattern = group_parameter(groups[normal_cf_group][1], "policy-regex-filter")
+        try:
+            if not pattern or re.search(pattern, base_cf) is None:
+                errors.append(
+                    f"line {groups[normal_cf_group][0]}: normal CF auto group does not include the base CF proxy"
+                )
+            if pattern and ai_proxy and re.search(pattern, ai_proxy):
+                errors.append(
+                    f"line {groups[normal_cf_group][0]}: normal CF auto group also matches an AI proxy"
+                )
+        except re.error as exc:
+            errors.append(f"line {groups[normal_cf_group][0]}: invalid CF regex: {exc}")
+    if ai_cf_group and ai_proxy and base_cf:
+        pattern = group_parameter(groups[ai_cf_group][1], "policy-regex-filter")
+        try:
+            if not pattern or re.search(pattern, ai_proxy) is None:
+                errors.append(f"line {groups[ai_cf_group][0]}: AI CF auto group matches no AI proxy")
+            if pattern and re.search(pattern, base_cf):
+                errors.append(f"line {groups[ai_cf_group][0]}: AI CF auto group matches the base CF proxy")
+        except re.error as exc:
+            errors.append(f"line {groups[ai_cf_group][0]}: invalid AI CF regex: {exc}")
+
+    ai_positions = [
+        line_no
+        for line_no, _, _, policy in rule_records
+        if any(policy_has_suffix(policy, suffix) for suffix in AI_POLICY_SUFFIXES)
+    ]
+    broad_positions = [
+        line_no
+        for line_no, _, fields, _ in rule_records
+        if any(marker in ",".join(fields) for marker in BROAD_PRIORITY_MARKERS)
+    ]
+    if ai_positions and broad_positions and max(ai_positions) > min(broad_positions):
+        errors.append(
+            f"line {min(broad_positions)}: broad/direct/filter rules must come after all iCloud and AI rules"
+        )
+
+    icloud_positions = [
+        line_no
+        for line_no, _, _, policy in rule_records
+        if policy_has_suffix(policy, "iCloud Private")
+    ]
+    apple_ai_records = [
+        (line_no, rule_type, fields)
+        for line_no, rule_type, fields, policy in rule_records
+        if policy_has_suffix(policy, "Apple Intelligence")
+    ]
+    if icloud_positions and apple_ai_records and min(icloud_positions) > min(
+        line_no for line_no, _, _ in apple_ai_records
+    ):
+        errors.append("iCloud Private Relay rules must precede Apple Intelligence rules")
+
+    apple_ai_conditions = {
+        (rule_type, fields[1].lower().strip().strip('"'))
+        for _, rule_type, fields in apple_ai_records
+        if len(fields) > 1 and rule_type in {"DOMAIN", "DOMAIN-SUFFIX"}
+    }
+    for missing in sorted(APPLE_AI_BASELINE - apple_ai_conditions):
+        errors.append(f"Apple Intelligence baseline is missing {missing[0]},{missing[1]}")
+    for line_no, rule_type, _ in apple_ai_records:
+        if rule_type in {"IP-CIDR", "IP-CIDR6", "GEOIP"}:
+            errors.append(f"line {line_no}: Apple Intelligence must not use broad IP or GEOIP rules")
+    if platform == "mac" and not any(
+        rule_type == "PROCESS-NAME"
+        and len(fields) > 1
+        and fields[1].strip().strip('"') == "assistantd"
+        for _, rule_type, fields in apple_ai_records
+    ):
+        errors.append("macOS Apple Intelligence baseline is missing PROCESS-NAME,assistantd")
+
+    copilot = next(
+        (line_no for line_no, _, fields, _ in rule_records if "/Copilot/" in ",".join(fields)),
+        None,
+    )
+    github = next(
+        (line_no for line_no, _, fields, _ in rule_records if "/GitHub/" in ",".join(fields)),
+        None,
+    )
+    if copilot and github and copilot > github:
+        errors.append(f"line {github}: generic GitHub rule must come after Copilot")
+
+    china_ip = any("ChinaIp.list" in ",".join(fields) for _, _, fields, _ in rule_records)
+    geoip_cn = any(
+        rule_type == "GEOIP" and len(fields) > 1 and fields[1].upper() == "CN"
+        for _, rule_type, fields, _ in rule_records
+    )
+    if china_ip and geoip_cn:
+        errors.append("ChinaIp.list duplicates the active GEOIP,CN fallback")
+
+    filter_positions = [
+        line_no
+        for line_no, _, fields, _ in rule_records
+        if "/Advertising" in ",".join(fields) or "/Privacy/" in ",".join(fields)
+    ]
+    geoip_positions = [
+        line_no
+        for line_no, rule_type, fields, _ in rule_records
+        if rule_type == "GEOIP" and len(fields) > 1 and fields[1].upper() == "CN"
+    ]
+    if filter_positions and geoip_positions and min(filter_positions) < max(geoip_positions):
+        errors.append(
+            f"line {min(filter_positions)}: optional ad/privacy filters must follow the domestic GEOIP fallback"
+        )
 
     stats = {
         "proxies": len(proxies),

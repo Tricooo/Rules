@@ -53,6 +53,32 @@ The production profile order is:
 The first-match rule model means later exact rules cannot repair a broad rule
 placed above them. Static validation therefore blocks known broad AI suffixes.
 
+## Implemented profile safeguards
+
+- The Apple-owned 17.0.0.0/8 range is not present in skip-proxy. Apple traffic
+  must enter the Surge rule engine instead of bypassing all domain policies.
+- iOS uses ChinaCompanyIp plus GEOIP,CN. ChinaIp is intentionally not stacked
+  on top because it largely duplicates the GEOIP fallback. macOS follows the
+  same model.
+- iCloud Private Relay and all AI rules precede domestic direct, generic Apple,
+  advertising and privacy lists on both platforms.
+- iOS keeps optional advertising and privacy lists disabled. macOS retains the
+  lighter lists but evaluates them after the domestic GEOIP fallback.
+- The normal CF smart group includes the base CF proxy and excludes names ending
+  in -AI. The AI CF smart group includes only -AI proxies.
+- iOS defaults FINAL to DIRECT for domestic application reliability. macOS
+  defaults FINAL to My Node, whose first choice is the Auto-SSID subnet group.
+- encrypted-dns-follow-outbound-mode remains false. The AliDNS and DNSPod DoH
+  endpoints bootstrap directly and do not drift with a selected AI egress.
+- 100.64.0.0/10 remains excluded for the current external Tailscale topology.
+  Remove that exclusion before routing Tailnet traffic through Surge's own
+  Tailscale/VIF path.
+
+The profile-contract validator has regression tests for the Apple bypass,
+AI-before-broad ordering, China IP duplication, unused composite groups and AI
+egress defaults. It emits warnings, without exposing values, when MITM material
+has no hostname or a device-specific BSSID still needs human confirmation.
+
 ## Release and rollback
 
 - Production profiles point only to release.
@@ -66,11 +92,11 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
 
 ## Deferred decisions
 
-- ChinaCompanyIp, ChinaIp and GEOIP consolidation requires real request-log
-  evidence because removing a broad domestic range can change CDN behavior.
 - GitHub versus Copilot handling of api.github.com requires connection-log
   verification; routing it wholly to either policy can split or over-broaden
   traffic.
 - Sub-Store probe scripts remain unchanged until their live collections and
   cache lifecycle are verified.
 - Apple Intelligence candidate domains remain disabled by default.
+- The macOS BSSID selector remains until the owner confirms whether the old
+  company Wi-Fi mapping is still needed.

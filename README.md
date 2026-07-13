@@ -28,6 +28,7 @@ rules/
   candidates/      # observations and rejected broad domains; never auto-loaded
 docs/               # governance and migration rationale
 scripts/            # Sub-Store helpers and static validation
+tests/              # profile-contract regression tests
 .github/workflows/  # validation gate
 AI/ and *.list      # legacy compatibility paths
 ~~~
@@ -68,10 +69,12 @@ rule type has been checked for Surge compatibility.
    relevant.
 3. Prove that the hostname is service-specific. Shared analytics, feature flag,
    CDN and generic API domains stay out of production.
-4. Run python3 scripts/validate_rules.py.
+4. Run python3 -m unittest discover -s tests -v and python3 scripts/validate_rules.py.
 5. Run scripts/validate_surge_profile.py with --platform ios or --platform mac
    against the local profile copy. The validator reports references and line
-   numbers without printing proxy credentials.
+   numbers without printing proxy credentials. It also enforces the agreed AI
+   order, stable defaults, platform naming, subnet selectors, CF filters and
+   domestic-IP de-duplication.
 6. Review the profile diff, publish to release, then update profile URLs.
 7. Keep one rollback snapshot per change family.
 
