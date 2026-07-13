@@ -13,5 +13,7 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+      - name: Check validator syntax
+        run: python3 -m py_compile scripts/validate_rules.py scripts/validate_surge_profile.py
       - name: Validate rule files
         run: python3 scripts/validate_rules.py

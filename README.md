@@ -69,7 +69,10 @@ rule type has been checked for Surge compatibility.
 3. Prove that the hostname is service-specific. Shared analytics, feature flag,
    CDN and generic API domains stay out of production.
 4. Run python3 scripts/validate_rules.py.
-5. Review the profile diff, publish to release, then update profile URLs.
-6. Keep one rollback snapshot per change family.
+5. Run scripts/validate_surge_profile.py with --platform ios or --platform mac
+   against the local profile copy. The validator reports references and line
+   numbers without printing proxy credentials.
+6. Review the profile diff, publish to release, then update profile URLs.
+7. Keep one rollback snapshot per change family.
 
 See docs/rule-governance.md for the detailed decisions and safety boundaries.
