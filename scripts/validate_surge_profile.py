@@ -219,6 +219,25 @@ def policy_has_suffix(policy: str, suffix: str) -> bool:
     return policy == suffix or policy.endswith(suffix)
 
 
+def group_reaches_policy_suffix(
+    groups: dict[str, tuple[int, str]], start: str, suffixes: tuple[str, ...]
+) -> bool:
+    """Return whether a group's explicit reference graph reaches a guarded policy."""
+    pending = [start]
+    visited: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        for member in group_members(groups[current][1]):
+            if any(policy_has_suffix(member, suffix) for suffix in suffixes):
+                return True
+            if member in groups and member not in visited:
+                pending.append(member)
+    return False
+
+
 def extract_group_references(
     groups: dict[str, tuple[int, str]],
 ) -> tuple[dict[str, set[str]], list[str]]:
@@ -416,78 +435,62 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             "[MITM] contains CA material but the profile declares no hostname; modules may add targets, and all CA values must be redacted before sharing"
         )
 
+    platform_label = "iOS" if platform == "ios" else "macOS"
     ai_egress = find_named_suffix(groups, "AI Egress")
-    if platform == "ios":
-        if ai_egress is not None:
-            errors.append(f"line {groups[ai_egress][0]}: iOS must not define AI Egress")
-        ios_ai_defaults = (
-            ("ChatGPT", "Direct-AI"),
-            ("Claude", "Direct-AI"),
-            ("Gemini", "Direct-AI"),
-            ("GitHub Copilot", "Auto Selection"),
-            ("Perplexity", "Auto Selection"),
-            ("Other AI", "Auto Selection"),
-            ("Grok", "Auto Selection"),
-            ("Apple Intelligence", "US Node"),
+    if ai_egress is not None:
+        errors.append(
+            f"line {groups[ai_egress][0]}: {platform_label} must not define AI Egress"
         )
-        for suffix, expected_default in ios_ai_defaults:
-            name = find_named_suffix(groups, suffix)
-            if name is None:
-                errors.append(f"missing {suffix} policy group")
-                continue
-            service_members = group_members(groups[name][1])
-            if not service_members or not policy_has_suffix(service_members[0], expected_default):
-                errors.append(
-                    f"line {groups[name][0]}: {name} must default to {expected_default}"
-                )
-            if suffix in {"ChatGPT", "Claude", "Gemini"}:
-                invalid_members = [
-                    member
-                    for member in service_members
-                    if not any(
-                        policy_has_suffix(member, allowed)
-                        for allowed in ("Direct-AI", "CF-AI-Auto")
-                    )
-                ]
-                if invalid_members:
-                    errors.append(
-                        f"line {groups[name][0]}: {name} may only use dedicated AI policies"
-                    )
-            elif any(
-                policy_has_suffix(member, dedicated)
-                for member in service_members
-                for dedicated in ("Direct-AI", "CF-AI-Auto", "AI Egress")
-            ):
-                errors.append(
-                    f"line {groups[name][0]}: {name} must not use dedicated AI policies"
-                )
-    elif ai_egress is None:
-        errors.append("missing AI Egress policy group")
-    else:
-        members = group_members(groups[ai_egress][1])
-        if not members or not members[0].endswith("Direct-AI"):
+
+    ai_defaults = (
+        ("ChatGPT", "Direct-AI"),
+        ("Claude", "Direct-AI"),
+        ("Gemini", "Direct-AI"),
+        ("GitHub Copilot", "Auto Selection"),
+        ("Perplexity", "Auto Selection"),
+        ("Other AI", "Auto Selection"),
+        ("Grok", "Auto Selection"),
+        ("Apple Intelligence", "US Node"),
+    )
+    dedicated_suffixes = ("Direct-AI", "CF-AI-Auto", "AI Egress")
+    for suffix, expected_default in ai_defaults:
+        name = find_named_suffix(groups, suffix)
+        if name is None:
+            errors.append(f"missing {suffix} policy group")
+            continue
+        service_members = group_members(groups[name][1])
+        if not service_members or not policy_has_suffix(service_members[0], expected_default):
             errors.append(
-                f"line {groups[ai_egress][0]}: AI Egress must default to the stable Direct-AI policy"
+                f"line {groups[name][0]}: {name} must default to {expected_default}"
             )
-        for suffix in (
-            "ChatGPT",
-            "Claude",
-            "Gemini",
-            "GitHub Copilot",
-            "Perplexity",
-            "Other AI",
-            "Grok",
-            "Apple Intelligence",
-        ):
-            name = find_named_suffix(groups, suffix)
-            if name is None:
-                errors.append(f"missing {suffix} policy group")
-                continue
-            service_members = group_members(groups[name][1])
-            if not service_members or service_members[0] != ai_egress:
-                errors.append(
-                    f"line {groups[name][0]}: {name} must use {ai_egress} as its first policy"
+        if suffix in {"ChatGPT", "Claude", "Gemini"}:
+            invalid_members = [
+                member
+                for member in service_members
+                if not any(
+                    policy_has_suffix(member, allowed)
+                    for allowed in ("Direct-AI", "CF-AI-Auto")
                 )
+            ]
+            if invalid_members:
+                errors.append(
+                    f"line {groups[name][0]}: {name} may only use dedicated AI policies"
+                )
+            continue
+
+        has_direct_dedicated = any(
+            policy_has_suffix(member, dedicated)
+            for member in service_members
+            for dedicated in dedicated_suffixes
+        )
+        if has_direct_dedicated:
+            errors.append(
+                f"line {groups[name][0]}: {name} must not use dedicated AI policies"
+            )
+        elif group_reaches_policy_suffix(groups, name, dedicated_suffixes):
+            errors.append(
+                f"line {groups[name][0]}: {name} reaches a dedicated AI policy through another group"
+            )
 
     final_group = find_named_suffix(groups, "Final")
     if final_group is None:
@@ -497,7 +500,6 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
         if not final_members:
             errors.append(f"line {groups[final_group][0]}: Final policy group has no policies")
         elif not policy_has_suffix(final_members[0], "My Node"):
-            platform_label = "iOS" if platform == "ios" else "macOS"
             errors.append(
                 f"line {groups[final_group][0]}: {platform_label} Final must default to My Node"
             )

@@ -21,10 +21,12 @@ community list. It must have a clear owner, narrow scope and a rollback path.
    platform-only rules. macOS keeps Emoji and PROCESS-NAME support; iOS does not.
 7. MITM is outside this migration. URL-REGEX rules requiring HTTPS decryption
    are therefore not accepted.
-8. Dedicated AI egress is service-scoped rather than global. On iOS only
-   ChatGPT, Claude and Gemini may use Direct-AI or CF-AI-Auto. Other AI services
-   default to Auto Selection, while Apple Intelligence defaults to US Node to
-   avoid unsupported-region drift.
+8. Dedicated AI egress is service-scoped rather than global on both platforms.
+   Only ChatGPT, Claude and Gemini may use Direct-AI or CF-AI-Auto. Other AI
+   services default to Auto Selection, while Apple Intelligence defaults to US
+   Node to avoid unsupported-region drift. macOS keeps Emoji policy names and
+   its PROCESS-NAME fallback; those presentation and platform capabilities do
+   not change the egress contract.
 
 ## Why the old AI lists were unsafe
 
@@ -70,16 +72,18 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
   lighter lists but evaluates them after the domestic GEOIP fallback.
 - The normal CF smart group includes the base CF proxy and excludes names ending
   in -AI. The AI CF smart group includes only -AI proxies.
-- iOS defaults FINAL to My Node so newly blocked or not-yet-catalogued domains
-  still receive a proxy route. The maintained direct domain baseline,
+- Both profiles default FINAL to My Node so newly blocked or not-yet-catalogued
+  domains still receive a proxy route. The maintained direct domain baseline,
   ChinaCompanyIp and GEOIP,CN keep known domestic traffic direct; DIRECT remains
   an explicit manual option in the Final group.
 - FINAL is the rule-system catch-all. The Final policy group intentionally uses
   `select`; a Surge `fallback` group only chooses the first available policy by
   health check and cannot determine whether an unmatched destination needs a
   proxy. macOS still defaults FINAL to My Node through its Auto-SSID topology.
-- iOS no longer defines an AI Egress group. The macOS profile keeps its current
-  AI Egress topology until that device can be unlocked and verified separately.
+- Neither profile defines an AI Egress group. ChatGPT, Claude and Gemini directly
+  expose only the two dedicated AI policies; Copilot, Perplexity, Other AI and
+  Grok expose ordinary Auto/Manual/US policies; Apple Intelligence exposes the
+  stable US group before ordinary manual alternatives.
 - encrypted-dns-follow-outbound-mode remains false. The AliDNS and DNSPod DoH
   endpoints bootstrap directly and do not drift with a selected AI egress.
 - 100.64.0.0/10 remains excluded for the current external Tailscale topology.
@@ -88,9 +92,30 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
 
 The profile-contract validator has regression tests for the Apple bypass,
 AI-before-broad ordering, China IP duplication, unused composite groups,
-service-scoped iOS AI egress and proxy-first FINAL behavior. It emits warnings,
-without exposing values, when MITM material has no hostname or a device-specific
-BSSID still needs human confirmation.
+cross-platform service-scoped AI egress, indirect dedicated-policy leakage,
+macOS Emoji names and proxy-first FINAL behavior. It emits warnings, without
+exposing values, when MITM material has no hostname or a device-specific BSSID
+still needs human confirmation.
+
+## macOS rollout evidence (2026-07-14)
+
+- The formal iCloud profile was backed up before migration, then synchronized
+  from the checked workspace copy and accepted by Surge's bundled parser.
+- `surge-cli reload` succeeded. The runtime original and formal profile both
+  expose 50 policy groups with identical names; neither contains AI Egress.
+- The effective profile retains `PROCESS-NAME,assistantd`, uses `FINAL,🧭 Final`,
+  and keeps My Node as the Final group's first policy.
+- Persisted selections using the retired `🇺🇲 US Node` spelling were migrated.
+  Apple Intelligence now selects `🇺🇸 US Node`; Other AI selects Auto Selection.
+- Direct-AI responded to a live policy probe. CF-AI-Auto, US Node and Auto
+  Selection each returned at least one available member during group probes.
+- The Proxy and MITM sections are byte-for-byte unchanged from the pre-migration
+  backup. MITM, short-lived subscription URLs, DNS, Host and TUN settings were
+  intentionally outside this change.
+
+These controller and reachability checks do not prove application semantics.
+Siri/Apple Intelligence actions, ChatGPT Voice and representative domestic apps
+still require Recent Requests evidence before being marked end-to-end verified.
 
 ## Release and rollback
 

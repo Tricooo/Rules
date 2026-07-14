@@ -28,9 +28,9 @@ Perplexity = select, Auto Selection, US Node
 Other AI = select, Auto Selection, US Node
 Grok = select, Auto Selection, US Node
 Apple Intelligence = select, US Node, Auto Selection
-iCloud Private = select, Direct-AI
+iCloud Private = select, DIRECT
 Apple = select, DIRECT
-US Node = smart, Direct-AI, policy-regex-filter=🇺🇸
+US Node = smart, CF-us, policy-regex-filter=🇺🇸
 My Node = subnet, default = DIRECT, TYPE:CELLULAR = DIRECT, SSID:Entrance = DIRECT
 Cloudflare Auto = smart, include-all-proxies=true, policy-regex-filter=(?i)^(?:CF|CF-(?!.*-AI$).+)$
 CF-AI-Auto = smart, include-all-proxies=true, policy-regex-filter=(?i)^CF-.*-AI$
@@ -60,31 +60,6 @@ FINAL,Final
 
 def build_mac_profile() -> str:
     profile = BASE_IOS_PROFILE.replace(
-        "ChatGPT = select, Direct-AI, CF-AI-Auto",
-        "AI Egress = select, Direct-AI, CF-AI-Auto, US Node\n"
-        "ChatGPT = select, AI Egress",
-    ).replace(
-        "Claude = select, Direct-AI, CF-AI-Auto",
-        "Claude = select, AI Egress",
-    ).replace(
-        "Gemini = select, Direct-AI, CF-AI-Auto",
-        "Gemini = select, AI Egress",
-    ).replace(
-        "GitHub Copilot = select, Auto Selection, US Node",
-        "GitHub Copilot = select, AI Egress",
-    ).replace(
-        "Perplexity = select, Auto Selection, US Node",
-        "Perplexity = select, AI Egress",
-    ).replace(
-        "Other AI = select, Auto Selection, US Node",
-        "Other AI = select, AI Egress",
-    ).replace(
-        "Grok = select, Auto Selection, US Node",
-        "Grok = select, AI Egress",
-    ).replace(
-        "Apple Intelligence = select, US Node, Auto Selection",
-        "Apple Intelligence = select, AI Egress, US Node",
-    ).replace(
         "My Node = subnet, default = DIRECT, TYPE:CELLULAR = DIRECT, SSID:Entrance = DIRECT",
         "Auto-SSID = subnet, default = DIRECT, SSID:Entrance = DIRECT\n"
         "My Node = select, Auto-SSID, DIRECT",
@@ -94,7 +69,7 @@ def build_mac_profile() -> str:
         "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple",
     )
     emoji_names = {
-        "AI Egress": "🧠 AI Egress",
+        "Direct-AI": "☀️ Direct-AI",
         "ChatGPT": "🫧 ChatGPT",
         "Claude": "🌼 Claude",
         "Gemini": "✨ Gemini",
@@ -105,11 +80,11 @@ def build_mac_profile() -> str:
         "Apple Intelligence": "🌈 Apple Intelligence",
         "iCloud Private": "🛡️ iCloud Private",
         "Apple": "🍎 Apple",
-        "Auto Selection": "🧪 Auto Selection",
+        "Auto Selection": "♻️ Auto Selection",
         "US Node": "🇺🇸 US Node",
         "Auto-SSID": "🎛️ Auto-SSID",
         "My Node": "🫟 My Node",
-        "Cloudflare Auto": "🎲 Cloudflare Auto",
+        "Cloudflare Auto": "🎲 CF-Auto",
         "CF-AI-Auto": "☁️ CF-AI-Auto",
         "Final": "🧭 Final",
     }
@@ -242,13 +217,70 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         errors, _ = self.validate(profile)
         self.assertTrue(any("iOS Final must default to My Node" in item for item in errors))
 
-    def test_mac_ai_service_must_default_to_ai_egress(self) -> None:
+    def test_mac_must_not_define_ai_egress(self) -> None:
         profile = build_mac_profile().replace(
-            "🫧 ChatGPT = select, 🧠 AI Egress",
-            "🫧 ChatGPT = select, DIRECT, 🧠 AI Egress",
+            "🫧 ChatGPT = select, ☀️ Direct-AI, ☁️ CF-AI-Auto",
+            "🧠 AI Egress = select, ☀️ Direct-AI, ☁️ CF-AI-Auto\n"
+            "🫧 ChatGPT = select, ☀️ Direct-AI, ☁️ CF-AI-Auto",
         )
         errors, _ = self.validate(profile, "mac")
-        self.assertTrue(any("ChatGPT must use" in item for item in errors))
+        self.assertTrue(any("macOS must not define AI Egress" in item for item in errors))
+
+    def test_mac_core_ai_service_must_default_to_direct_ai(self) -> None:
+        profile = build_mac_profile().replace(
+            "🫧 ChatGPT = select, ☀️ Direct-AI, ☁️ CF-AI-Auto",
+            "🫧 ChatGPT = select, ♻️ Auto Selection, ☀️ Direct-AI, ☁️ CF-AI-Auto",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("ChatGPT must default to Direct-AI" in item for item in errors))
+
+    def test_mac_core_ai_service_must_only_use_ai_dedicated_policies(self) -> None:
+        profile = build_mac_profile().replace(
+            "🌼 Claude = select, ☀️ Direct-AI, ☁️ CF-AI-Auto",
+            "🌼 Claude = select, ☀️ Direct-AI, ☁️ CF-AI-Auto, ♻️ Auto Selection",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("Claude may only use dedicated AI policies" in item for item in errors))
+
+    def test_mac_other_ai_service_must_default_to_auto_selection(self) -> None:
+        profile = build_mac_profile().replace(
+            "🔥 Grok = select, ♻️ Auto Selection, 🇺🇸 US Node",
+            "🔥 Grok = select, ☀️ Direct-AI, ♻️ Auto Selection, 🇺🇸 US Node",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("Grok must default to Auto Selection" in item for item in errors))
+
+    def test_mac_other_ai_service_must_not_use_ai_dedicated_policies(self) -> None:
+        profile = build_mac_profile().replace(
+            "🔮 Perplexity = select, ♻️ Auto Selection, 🇺🇸 US Node",
+            "🔮 Perplexity = select, ♻️ Auto Selection, ☀️ Direct-AI, 🇺🇸 US Node",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("Perplexity must not use dedicated AI policies" in item for item in errors))
+
+    def test_mac_apple_intelligence_must_default_to_us_node(self) -> None:
+        profile = build_mac_profile().replace(
+            "🌈 Apple Intelligence = select, 🇺🇸 US Node, ♻️ Auto Selection",
+            "🌈 Apple Intelligence = select, ♻️ Auto Selection, 🇺🇸 US Node",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("Apple Intelligence must default to US Node" in item for item in errors))
+
+    def test_mac_final_must_default_to_my_node(self) -> None:
+        profile = build_mac_profile().replace(
+            "🧭 Final = select, 🫟 My Node, ♻️ Auto Selection, DIRECT",
+            "🧭 Final = select, DIRECT, 🫟 My Node, ♻️ Auto Selection",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("macOS Final must default to My Node" in item for item in errors))
+
+    def test_other_ai_service_must_not_reach_ai_dedicated_policy_indirectly(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Auto Selection = smart, CF, US Node",
+            "Auto Selection = smart, CF, Direct-AI, US Node",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("Other AI reaches a dedicated AI policy" in item for item in errors))
 
     def test_include_other_group_must_be_quoted(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
@@ -261,9 +293,9 @@ class ValidateSurgeProfileTest(unittest.TestCase):
 
     def test_taiwan_group_rejects_samoa_flag(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
-            "US Node = smart, Direct-AI, policy-regex-filter=🇺🇸",
-            "US Node = smart, Direct-AI, policy-regex-filter=🇺🇸\n"
-            "TW Node = smart, Direct-AI, policy-regex-filter=🇼🇸",
+            "US Node = smart, CF-us, policy-regex-filter=🇺🇸",
+            "US Node = smart, CF-us, policy-regex-filter=🇺🇸\n"
+            "TW Node = smart, CF-us, policy-regex-filter=🇼🇸",
         )
         errors, _ = self.validate(profile)
         self.assertTrue(any("Samoa flag" in item for item in errors))
