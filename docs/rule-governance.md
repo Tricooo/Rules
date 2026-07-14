@@ -64,7 +64,7 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
 - The Apple-owned 17.0.0.0/8 range is not present in skip-proxy. Apple traffic
   must enter the Surge rule engine instead of bypassing all domain policies.
 - Both profiles keep ChinaCompanyIp plus GEOIP,CN for the existing IPv4/domain
-  behavior. They add SukkaW's maintained IPv6-only mainland CIDR ruleset between
+  behavior. They add SukkaW's maintained mainland IPv6-focused ruleset between
   the service/proxy layer and GEOIP,CN. This fills the dual-stack gap without
   re-adding thousands of duplicate IPv4 CIDRs.
 - The mainland IPv6 RULE-SET uses `no-resolve`. It matches literal IPv6 targets
@@ -117,7 +117,8 @@ confirmation.
   or an unsafe all-IPv6 DIRECT rule.
 - The production source is SukkaW's mainland-friendly official mirror:
   `https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf`. The verified
-  2026-07-14 artifact contains 1,620 IP-CIDR6 entries and covers both samples via
+  2026-07-14 artifact contains 1,620 IP-CIDR6 entries, no IPv4 CIDR, and one
+  maintainer watermark DOMAIN entry. It covers both samples via
   `2408:8756::/31`; the main server and official mirror were byte-identical.
 - Keep this rule after domain/service/proxy rules and immediately before
   GEOIP,CN. Removing this single RULE-SET line is the rollback; do not change
