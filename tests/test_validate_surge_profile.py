@@ -7,10 +7,21 @@ from pathlib import Path
 from scripts.validate_surge_profile import validate_profile
 
 
+CHINA_IPV6_RULESET_URL = "https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf"
+CHINA_IPV6_IOS_RULE = (
+    f'RULE-SET,{CHINA_IPV6_RULESET_URL},DIRECT,no-resolve,"update-interval=86400"'
+)
+CHINA_IPV6_MAC_RULE = (
+    f'RULE-SET,{CHINA_IPV6_RULESET_URL},"🎯 Global Direct",no-resolve,'
+    '"update-interval=86400"'
+)
+
+
 BASE_IOS_PROFILE = """[General]
 skip-proxy = 127.0.0.1, 10.0.0.0/8, 100.64.0.0/10
 tun-excluded-routes = 10.0.0.0/8, 100.64.0.0/10, 224.0.0.0/4
 encrypted-dns-follow-outbound-mode = false
+ipv6 = true
 
 [Proxy]
 Direct-AI = direct
@@ -53,6 +64,7 @@ DOMAIN-SUFFIX,apple-relay.fastly-edge.com,Apple Intelligence
 DOMAIN,cp4.cloudflare.com,Apple Intelligence
 DOMAIN-SUFFIX,siri.apple.com,Apple Intelligence
 RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple
+RULE-SET,https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf,DIRECT,no-resolve,"update-interval=86400"
 GEOIP,CN,DIRECT
 FINAL,Final
 """
@@ -62,6 +74,7 @@ def build_mac_profile() -> str:
     profile = BASE_IOS_PROFILE.replace(
         "My Node = subnet, default = DIRECT, TYPE:CELLULAR = DIRECT, SSID:Entrance = DIRECT",
         "Auto-SSID = subnet, default = DIRECT, SSID:Entrance = DIRECT\n"
+        "Global Direct = select, DIRECT\n"
         "My Node = select, Auto-SSID, DIRECT",
     ).replace(
         "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple",
@@ -80,6 +93,7 @@ def build_mac_profile() -> str:
         "Apple Intelligence": "🌈 Apple Intelligence",
         "iCloud Private": "🛡️ iCloud Private",
         "Apple": "🍎 Apple",
+        "Global Direct": "🎯 Global Direct",
         "Auto Selection": "♻️ Auto Selection",
         "US Node": "🇺🇸 US Node",
         "Auto-SSID": "🎛️ Auto-SSID",
@@ -90,9 +104,13 @@ def build_mac_profile() -> str:
     }
     for plain, decorated in emoji_names.items():
         profile = profile.replace(plain, decorated)
-    return profile.replace("🌈 🍎 Apple Intelligence", "🌈 Apple Intelligence").replace(
-        "https://example.invalid/🍎 Apple_All_No_Resolve.list",
-        "https://example.invalid/Apple_All_No_Resolve.list",
+    return (
+        profile.replace(CHINA_IPV6_IOS_RULE, CHINA_IPV6_MAC_RULE)
+        .replace("🌈 🍎 Apple Intelligence", "🌈 Apple Intelligence")
+        .replace(
+            "https://example.invalid/🍎 Apple_All_No_Resolve.list",
+            "https://example.invalid/Apple_All_No_Resolve.list",
+        )
     )
 
 
@@ -150,6 +168,58 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         )
         errors, _ = self.validate(profile)
         self.assertTrue(any("ChinaIp.list duplicates" in item for item in errors))
+
+    def test_mainland_ipv6_ruleset_is_required(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(CHINA_IPV6_IOS_RULE + "\n", "")
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("mainland IPv6 ruleset is missing" in item for item in errors))
+
+    def test_ipv4_only_profile_does_not_require_mainland_ipv6_ruleset(self) -> None:
+        profile = BASE_IOS_PROFILE.replace("ipv6 = true", "ipv6 = false")
+        profile = profile.replace(CHINA_IPV6_IOS_RULE + "\n", "")
+        errors, _ = self.validate(profile)
+        self.assertFalse(any("mainland IPv6 ruleset is missing" in item for item in errors))
+
+    def test_mainland_ipv6_ruleset_must_use_direct_policy(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            CHINA_IPV6_IOS_RULE,
+            CHINA_IPV6_IOS_RULE.replace(",DIRECT,no-resolve", ",ChatGPT,no-resolve"),
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("mainland IPv6 ruleset must use a direct policy" in item for item in errors))
+
+    def test_mainland_ipv6_ruleset_must_not_resolve_domains(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(",DIRECT,no-resolve,", ",DIRECT,")
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("mainland IPv6 ruleset must use no-resolve" in item for item in errors))
+
+    def test_mainland_ipv6_ruleset_must_precede_geoip(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(CHINA_IPV6_IOS_RULE + "\n", "")
+        profile = profile.replace("GEOIP,CN,DIRECT\n", "GEOIP,CN,DIRECT\n" + CHINA_IPV6_IOS_RULE + "\n")
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("mainland IPv6 ruleset must precede GEOIP,CN" in item for item in errors))
+
+    def test_mainland_ipv6_ruleset_must_precede_final(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(CHINA_IPV6_IOS_RULE + "\n", "")
+        profile = profile.replace("FINAL,Final\n", "FINAL,Final\n" + CHINA_IPV6_IOS_RULE + "\n")
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("mainland IPv6 ruleset must precede FINAL" in item for item in errors))
+
+    def test_mainland_ipv6_ruleset_must_be_unique(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            CHINA_IPV6_IOS_RULE + "\n",
+            CHINA_IPV6_IOS_RULE + "\n" + CHINA_IPV6_IOS_RULE + "\n",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("referenced exactly once" in item for item in errors))
+
+    def test_mac_mainland_ipv6_ruleset_uses_global_direct(self) -> None:
+        profile = build_mac_profile().replace(
+            CHINA_IPV6_MAC_RULE,
+            CHINA_IPV6_MAC_RULE.replace("🎯 Global Direct", "🫧 ChatGPT"),
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("mainland IPv6 ruleset must use a direct policy" in item for item in errors))
 
     def test_unused_composite_group_is_rejected(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
@@ -308,14 +378,15 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         errors, _ = self.validate(profile)
         self.assertTrue(any("retired Webshare proxy" in item for item in errors))
 
-    def test_retired_lige_icon_repository_path_is_rejected(self) -> None:
+    def test_user_selected_lige_icon_repository_path_is_accepted(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
             "ChatGPT = select, Direct-AI, CF-AI-Auto",
             "ChatGPT = select, Direct-AI, CF-AI-Auto, "
-            "icon-url=https://raw.githubusercontent.com/lige47/QuanX-icon-rule/main/icon/chatgpt.png",
+            "icon-url=https://raw.githubusercontent.com/lige47/QuanX-icon-rule/"
+            "main/icon/02ProxySoftLogo/Surge(10).png",
         )
         errors, _ = self.validate(profile)
-        self.assertTrue(any("retired lige47 icon repository path" in item for item in errors))
+        self.assertEqual([], errors)
 
     def test_normal_cf_group_must_include_base_proxy(self) -> None:
         profile = BASE_IOS_PROFILE.replace(

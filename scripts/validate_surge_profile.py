@@ -62,6 +62,11 @@ APPLE_AI_BASELINE = {
     ("DOMAIN-SUFFIX", "siri.apple.com"),
 }
 
+MAINLAND_IPV6_RULESET_URLS = {
+    "https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf",
+    "https://ruleset.skk.moe/List/ip/china_ip_ipv6.conf",
+}
+
 AI_POLICY_SUFFIXES = (
     "iCloud Private",
     "ChatGPT",
@@ -80,6 +85,7 @@ BROAD_PRIORITY_MARKERS = (
     "ChinaDomain.list",
     "ChinaCompanyIp.list",
     "ChinaIp.list",
+    "china_ip_ipv6.conf",
     "surge-rules/release/direct.txt",
     "Apple_All_No_Resolve.list",
 )
@@ -312,6 +318,7 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
 
     general, general_errors = parse_named_entries(sections.get("General", []), "general option")
     errors.extend(general_errors)
+    ipv6_enabled = general.get("ipv6", (0, "false"))[1].strip().strip('"').lower() == "true"
     mitm, mitm_errors = parse_named_entries(sections.get("MITM", []), "MITM option")
     errors.extend(mitm_errors)
 
@@ -330,11 +337,6 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             errors.append(
                 f"line {line_no}: include-other-group in {group_name} must be one quoted comma-separated value"
             )
-        if "raw.githubusercontent.com/lige47/quanx-icon-rule/" in value.lower():
-            errors.append(
-                f"line {line_no}: {group_name} uses the retired lige47 icon repository path"
-            )
-
     if platform == "ios":
         for name, (line_no, _) in groups.items():
             if EMOJI_RE.search(name):
@@ -644,6 +646,37 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
     if copilot and github and copilot > github:
         errors.append(f"line {github}: generic GitHub rule must come after Copilot")
 
+    mainland_ipv6_records = [
+        (line_no, fields, policy)
+        for line_no, rule_type, fields, policy in rule_records
+        if rule_type == "RULE-SET"
+        and len(fields) > 1
+        and fields[1].strip().strip('"') in MAINLAND_IPV6_RULESET_URLS
+    ]
+    if ipv6_enabled and not mainland_ipv6_records:
+        errors.append("mainland IPv6 ruleset is missing")
+    elif len(mainland_ipv6_records) > 1:
+        errors.append("mainland IPv6 ruleset must be referenced exactly once")
+
+    for line_no, fields, policy in mainland_ipv6_records:
+        expected_direct_policy = (
+            "DIRECT" if platform == "ios" else find_named_suffix(groups, "Global Direct")
+        )
+        if policy != expected_direct_policy:
+            errors.append(f"line {line_no}: mainland IPv6 ruleset must use a direct policy")
+        modifiers = {field.strip().strip('"').lower() for field in fields[3:]}
+        if "no-resolve" not in modifiers:
+            errors.append(f"line {line_no}: mainland IPv6 ruleset must use no-resolve")
+
+    mainland_ipv6_positions = [line_no for line_no, _, _ in mainland_ipv6_records]
+    final_positions = [
+        line_no for line_no, rule_type, _, _ in rule_records if rule_type == "FINAL"
+    ]
+    if mainland_ipv6_positions and final_positions and max(mainland_ipv6_positions) > min(
+        final_positions
+    ):
+        errors.append("mainland IPv6 ruleset must precede FINAL")
+
     china_ip = any("ChinaIp.list" in ",".join(fields) for _, _, fields, _ in rule_records)
     geoip_cn = any(
         rule_type == "GEOIP" and len(fields) > 1 and fields[1].upper() == "CN"
@@ -662,6 +695,10 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
         for line_no, rule_type, fields, _ in rule_records
         if rule_type == "GEOIP" and len(fields) > 1 and fields[1].upper() == "CN"
     ]
+    if mainland_ipv6_positions and geoip_positions and max(mainland_ipv6_positions) > min(
+        geoip_positions
+    ):
+        errors.append("mainland IPv6 ruleset must precede GEOIP,CN")
     if filter_positions and geoip_positions and min(filter_positions) < max(geoip_positions):
         errors.append(
             f"line {min(filter_positions)}: optional ad/privacy filters must follow the domestic GEOIP fallback"

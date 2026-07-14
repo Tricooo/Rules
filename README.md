@@ -54,10 +54,10 @@ Private Relay domains from being enabled accidentally.
 | Concern | Owner |
 | --- | --- |
 | Domestic direct domain baseline | Loyalsoldier/surge-rules |
+| Mainland China IPv6 baseline | SukkaW-maintained mainland-friendly ruleset mirror |
 | Mature service-specific lists | blackmatrix7/ios_rule_script |
 | Compatibility exceptions | selected ACL4SSR lists |
 | Personal AI deltas | this repository |
-| Research reference | SukkaW/Surge |
 
 Clash-formatted repositories are not consumed directly unless every referenced
 rule type has been checked for Surge compatibility.
@@ -74,7 +74,7 @@ rule type has been checked for Surge compatibility.
    against the local profile copy. The validator reports references and line
    numbers without printing proxy credentials. It also enforces the agreed AI
    order, stable defaults, platform naming, subnet selectors, CF filters and
-   domestic-IP de-duplication.
+   domestic-IP de-duplication and the mainland IPv6 fallback contract.
 6. Review the profile diff, publish to release, then update profile URLs.
 7. Keep one rollback snapshot per change family.
 

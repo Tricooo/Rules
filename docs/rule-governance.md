@@ -52,7 +52,7 @@ The production profile order is:
 5. Maintained domestic direct domain baseline.
 6. Generic Apple, Google, social and media lists.
 7. Proxy/GFW rules.
-8. Domestic IP and GEOIP fallback.
+8. Mainland IPv6, domestic IPv4 and GEOIP fallback.
 9. Optional filtering rules.
 10. FINAL.
 
@@ -63,9 +63,15 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
 
 - The Apple-owned 17.0.0.0/8 range is not present in skip-proxy. Apple traffic
   must enter the Surge rule engine instead of bypassing all domain policies.
-- iOS uses ChinaCompanyIp plus GEOIP,CN. ChinaIp is intentionally not stacked
-  on top because it largely duplicates the GEOIP fallback. macOS follows the
-  same model.
+- Both profiles keep ChinaCompanyIp plus GEOIP,CN for the existing IPv4/domain
+  behavior. They add SukkaW's maintained IPv6-only mainland CIDR ruleset between
+  the service/proxy layer and GEOIP,CN. This fills the dual-stack gap without
+  re-adding thousands of duplicate IPv4 CIDRs.
+- The mainland IPv6 RULE-SET uses `no-resolve`. It matches literal IPv6 targets
+  (and an IP already resolved by an earlier rule) but does not introduce a new
+  DNS lookup or change the established domain-routing path.
+- ChinaIp is intentionally not stacked on top because it largely duplicates the
+  IPv4 GEOIP fallback. macOS follows the same model.
 - iCloud Private Relay and all AI rules precede domestic direct, generic Apple,
   advertising and privacy lists on both platforms.
 - iOS keeps optional advertising and privacy lists disabled. macOS retains the
@@ -74,8 +80,8 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
   in -AI. The AI CF smart group includes only -AI proxies.
 - Both profiles default FINAL to My Node so newly blocked or not-yet-catalogued
   domains still receive a proxy route. The maintained direct domain baseline,
-  ChinaCompanyIp and GEOIP,CN keep known domestic traffic direct; DIRECT remains
-  an explicit manual option in the Final group.
+  ChinaCompanyIp, the mainland IPv6 ruleset and GEOIP,CN keep known domestic
+  traffic direct; DIRECT remains an explicit manual option in the Final group.
 - FINAL is the rule-system catch-all. The Final policy group intentionally uses
   `select`; a Surge `fallback` group only chooses the first available policy by
   health check and cannot determine whether an unmatched destination needs a
@@ -91,11 +97,31 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
   Tailscale/VIF path.
 
 The profile-contract validator has regression tests for the Apple bypass,
-AI-before-broad ordering, China IP duplication, unused composite groups,
-cross-platform service-scoped AI egress, indirect dedicated-policy leakage,
-macOS Emoji names and proxy-first FINAL behavior. It emits warnings, without
-exposing values, when MITM material has no hostname or a device-specific BSSID
-still needs human confirmation.
+AI-before-broad ordering, China IP duplication, the required mainland IPv6
+source/policy/no-resolve/order, unused composite groups, cross-platform
+service-scoped AI egress, indirect dedicated-policy leakage, macOS Emoji names
+and proxy-first FINAL behavior. It emits warnings, without exposing values,
+when MITM material has no hostname or a device-specific BSSID still needs human
+confirmation.
+
+## Mainland literal-IPv6 closure (2026-07-14)
+
+- Recent Requests showed WeChat-family connections whose destination was an
+  IPv6 literal under `2408:8756:f50::/48`; with no hostname, domain rules could
+  never classify them.
+- Direct inspection of the configured Hackl0us Country.mmdb returned no record
+  for both samples. The active ACL4SSR ChinaCompanyIp list also contains no
+  IP-CIDR6 entries, so the request reached the proxy-first FINAL by design.
+- This is an IPv4/IPv6 coverage asymmetry, not a WeChat-domain omission. The fix
+  therefore does not add the two observed /128 addresses, a WeChat process rule,
+  or an unsafe all-IPv6 DIRECT rule.
+- The production source is SukkaW's mainland-friendly official mirror:
+  `https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf`. The verified
+  2026-07-14 artifact contains 1,620 IP-CIDR6 entries and covers both samples via
+  `2408:8756::/31`; the main server and official mirror were byte-identical.
+- Keep this rule after domain/service/proxy rules and immediately before
+  GEOIP,CN. Removing this single RULE-SET line is the rollback; do not change
+  FINAL, disable IPv6, or widen DIRECT to all IPv6 destinations.
 
 ## macOS rollout evidence (2026-07-14)
 
