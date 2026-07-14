@@ -19,22 +19,22 @@ CF-us = direct
 CF-us-AI = direct
 
 [Proxy Group]
-AI Egress = select, Direct-AI, CF-AI-Auto, US Node
-ChatGPT = select, AI Egress
-Claude = select, AI Egress
-Gemini = select, AI Egress
-GitHub Copilot = select, AI Egress
-Perplexity = select, AI Egress
-Other AI = select, AI Egress
-Grok = select, AI Egress
-Apple Intelligence = select, AI Egress, US Node
+ChatGPT = select, Direct-AI, CF-AI-Auto
+Claude = select, Direct-AI, CF-AI-Auto
+Gemini = select, Direct-AI, CF-AI-Auto
+Auto Selection = smart, CF, US Node
+GitHub Copilot = select, Auto Selection, US Node
+Perplexity = select, Auto Selection, US Node
+Other AI = select, Auto Selection, US Node
+Grok = select, Auto Selection, US Node
+Apple Intelligence = select, US Node, Auto Selection
 iCloud Private = select, Direct-AI
 Apple = select, DIRECT
 US Node = smart, Direct-AI, policy-regex-filter=🇺🇸
 My Node = subnet, default = DIRECT, TYPE:CELLULAR = DIRECT, SSID:Entrance = DIRECT
 Cloudflare Auto = smart, include-all-proxies=true, policy-regex-filter=(?i)^(?:CF|CF-(?!.*-AI$).+)$
 CF-AI-Auto = smart, include-all-proxies=true, policy-regex-filter=(?i)^CF-.*-AI$
-Final = select, DIRECT, My Node
+Final = select, My Node, Auto Selection, DIRECT
 
 [Rule]
 RULE-SET,https://example.invalid/iCloudPrivateRelay.list,iCloud Private
@@ -60,12 +60,34 @@ FINAL,Final
 
 def build_mac_profile() -> str:
     profile = BASE_IOS_PROFILE.replace(
+        "ChatGPT = select, Direct-AI, CF-AI-Auto",
+        "AI Egress = select, Direct-AI, CF-AI-Auto, US Node\n"
+        "ChatGPT = select, AI Egress",
+    ).replace(
+        "Claude = select, Direct-AI, CF-AI-Auto",
+        "Claude = select, AI Egress",
+    ).replace(
+        "Gemini = select, Direct-AI, CF-AI-Auto",
+        "Gemini = select, AI Egress",
+    ).replace(
+        "GitHub Copilot = select, Auto Selection, US Node",
+        "GitHub Copilot = select, AI Egress",
+    ).replace(
+        "Perplexity = select, Auto Selection, US Node",
+        "Perplexity = select, AI Egress",
+    ).replace(
+        "Other AI = select, Auto Selection, US Node",
+        "Other AI = select, AI Egress",
+    ).replace(
+        "Grok = select, Auto Selection, US Node",
+        "Grok = select, AI Egress",
+    ).replace(
+        "Apple Intelligence = select, US Node, Auto Selection",
+        "Apple Intelligence = select, AI Egress, US Node",
+    ).replace(
         "My Node = subnet, default = DIRECT, TYPE:CELLULAR = DIRECT, SSID:Entrance = DIRECT",
         "Auto-SSID = subnet, default = DIRECT, SSID:Entrance = DIRECT\n"
         "My Node = select, Auto-SSID, DIRECT",
-    ).replace(
-        "Final = select, DIRECT, My Node",
-        "Final = select, My Node, DIRECT",
     ).replace(
         "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple",
         "PROCESS-NAME,assistantd,Apple Intelligence\n"
@@ -83,6 +105,7 @@ def build_mac_profile() -> str:
         "Apple Intelligence": "🌈 Apple Intelligence",
         "iCloud Private": "🛡️ iCloud Private",
         "Apple": "🍎 Apple",
+        "Auto Selection": "🧪 Auto Selection",
         "US Node": "🇺🇸 US Node",
         "Auto-SSID": "🎛️ Auto-SSID",
         "My Node": "🫟 My Node",
@@ -155,24 +178,83 @@ class ValidateSurgeProfileTest(unittest.TestCase):
 
     def test_unused_composite_group_is_rejected(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
-            "Final = select, DIRECT, My Node",
-            'Asia = smart, include-other-group="US Node"\nFinal = select, DIRECT, My Node',
+            "Final = select, My Node, Auto Selection, DIRECT",
+            'Asia = smart, include-other-group="US Node"\n'
+            "Final = select, My Node, Auto Selection, DIRECT",
         )
         errors, _ = self.validate(profile)
         self.assertTrue(any("unused composite policy group Asia" in item for item in errors))
 
-    def test_ai_service_must_default_to_ai_egress(self) -> None:
+    def test_ios_must_not_define_ai_egress(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
-            "ChatGPT = select, AI Egress",
-            "ChatGPT = select, DIRECT, AI Egress",
+            "ChatGPT = select, Direct-AI, CF-AI-Auto",
+            "AI Egress = select, Direct-AI, CF-AI-Auto, US Node\n"
+            "ChatGPT = select, Direct-AI, CF-AI-Auto",
         )
         errors, _ = self.validate(profile)
-        self.assertTrue(any("ChatGPT must use AI Egress" in item for item in errors))
+        self.assertTrue(any("iOS must not define AI Egress" in item for item in errors))
+
+    def test_ios_core_ai_service_must_default_to_direct_ai(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "ChatGPT = select, Direct-AI, CF-AI-Auto",
+            "ChatGPT = select, Auto Selection, Direct-AI, CF-AI-Auto",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("ChatGPT must default to Direct-AI" in item for item in errors))
+
+    def test_ios_core_ai_service_must_only_use_ai_dedicated_policies(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Claude = select, Direct-AI, CF-AI-Auto",
+            "Claude = select, Direct-AI, CF-AI-Auto, Auto Selection",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("Claude may only use dedicated AI policies" in item for item in errors))
+
+    def test_ios_other_ai_service_must_default_to_auto_selection(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Grok = select, Auto Selection, US Node",
+            "Grok = select, Direct-AI, Auto Selection, US Node",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("Grok must default to Auto Selection" in item for item in errors))
+
+    def test_ios_other_ai_service_must_not_use_ai_dedicated_policies(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Perplexity = select, Auto Selection, US Node",
+            "Perplexity = select, Auto Selection, Direct-AI, US Node",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("Perplexity must not use dedicated AI policies" in item for item in errors))
+
+    def test_ios_apple_intelligence_must_default_to_us_node(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Apple Intelligence = select, US Node, Auto Selection",
+            "Apple Intelligence = select, Auto Selection, US Node",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("Apple Intelligence must default to US Node" in item for item in errors))
+
+    def test_ios_final_must_default_to_my_node(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Final = select, My Node, Auto Selection, DIRECT",
+            "Final = select, DIRECT, My Node, Auto Selection",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("iOS Final must default to My Node" in item for item in errors))
+
+    def test_mac_ai_service_must_default_to_ai_egress(self) -> None:
+        profile = build_mac_profile().replace(
+            "🫧 ChatGPT = select, 🧠 AI Egress",
+            "🫧 ChatGPT = select, DIRECT, 🧠 AI Egress",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("ChatGPT must use" in item for item in errors))
 
     def test_include_other_group_must_be_quoted(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
-            "Final = select, DIRECT, My Node",
-            "Non-HK = smart, include-other-group=US Node,My Node\nFinal = select, DIRECT, My Node",
+            "Final = select, My Node, Auto Selection, DIRECT",
+            "Non-HK = smart, include-other-group=US Node,My Node\n"
+            "Final = select, My Node, Auto Selection, DIRECT",
         )
         errors, _ = self.validate(profile)
         self.assertTrue(any("must be one quoted comma-separated value" in item for item in errors))
@@ -193,6 +275,15 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         )
         errors, _ = self.validate(profile)
         self.assertTrue(any("retired Webshare proxy" in item for item in errors))
+
+    def test_retired_lige_icon_repository_path_is_rejected(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "ChatGPT = select, Direct-AI, CF-AI-Auto",
+            "ChatGPT = select, Direct-AI, CF-AI-Auto, "
+            "icon-url=https://raw.githubusercontent.com/lige47/QuanX-icon-rule/main/icon/chatgpt.png",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("retired lige47 icon repository path" in item for item in errors))
 
     def test_normal_cf_group_must_include_base_proxy(self) -> None:
         profile = BASE_IOS_PROFILE.replace(

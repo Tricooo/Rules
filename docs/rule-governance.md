@@ -21,6 +21,10 @@ community list. It must have a clear owner, narrow scope and a rollback path.
    platform-only rules. macOS keeps Emoji and PROCESS-NAME support; iOS does not.
 7. MITM is outside this migration. URL-REGEX rules requiring HTTPS decryption
    are therefore not accepted.
+8. Dedicated AI egress is service-scoped rather than global. On iOS only
+   ChatGPT, Claude and Gemini may use Direct-AI or CF-AI-Auto. Other AI services
+   default to Auto Selection, while Apple Intelligence defaults to US Node to
+   avoid unsupported-region drift.
 
 ## Why the old AI lists were unsafe
 
@@ -66,8 +70,16 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
   lighter lists but evaluates them after the domestic GEOIP fallback.
 - The normal CF smart group includes the base CF proxy and excludes names ending
   in -AI. The AI CF smart group includes only -AI proxies.
-- iOS defaults FINAL to DIRECT for domestic application reliability. macOS
-  defaults FINAL to My Node, whose first choice is the Auto-SSID subnet group.
+- iOS defaults FINAL to My Node so newly blocked or not-yet-catalogued domains
+  still receive a proxy route. The maintained direct domain baseline,
+  ChinaCompanyIp and GEOIP,CN keep known domestic traffic direct; DIRECT remains
+  an explicit manual option in the Final group.
+- FINAL is the rule-system catch-all. The Final policy group intentionally uses
+  `select`; a Surge `fallback` group only chooses the first available policy by
+  health check and cannot determine whether an unmatched destination needs a
+  proxy. macOS still defaults FINAL to My Node through its Auto-SSID topology.
+- iOS no longer defines an AI Egress group. The macOS profile keeps its current
+  AI Egress topology until that device can be unlocked and verified separately.
 - encrypted-dns-follow-outbound-mode remains false. The AliDNS and DNSPod DoH
   endpoints bootstrap directly and do not drift with a selected AI egress.
 - 100.64.0.0/10 remains excluded for the current external Tailscale topology.
@@ -75,9 +87,10 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
   Tailscale/VIF path.
 
 The profile-contract validator has regression tests for the Apple bypass,
-AI-before-broad ordering, China IP duplication, unused composite groups and AI
-egress defaults. It emits warnings, without exposing values, when MITM material
-has no hostname or a device-specific BSSID still needs human confirmation.
+AI-before-broad ordering, China IP duplication, unused composite groups,
+service-scoped iOS AI egress and proxy-first FINAL behavior. It emits warnings,
+without exposing values, when MITM material has no hostname or a device-specific
+BSSID still needs human confirmation.
 
 ## Release and rollback
 
