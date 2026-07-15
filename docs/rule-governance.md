@@ -178,8 +178,50 @@ hostname or a device-specific BSSID still needs human confirmation.
   for “no decryption”.
 
 These controller and reachability checks do not prove application semantics.
-Siri/Apple Intelligence actions, ChatGPT Voice and representative domestic apps
-still require Recent Requests evidence before being marked end-to-end verified.
+Siri/Apple Intelligence actions, an actual ChatGPT Voice session and
+representative domestic apps still require device actions before being marked
+end-to-end verified.
+
+## Completion audit (2026-07-15)
+
+- The reviewed functional release is `1d37920dc7bd3a274a6dc45887cba0a97ab610f9`.
+  `main`, `release` and `codex/rules-v2` point to that object; all three raw
+  ChatGPT, ChatGPT Voice and Copilot production URLs returned HTTP 200 with
+  content hashes equal to the local files. The three branch CI runs completed
+  successfully.
+- The final local gate passed 61 unit tests, validated 19 files containing 68
+  production rules, and confirmed that the current official OpenAI Voice feed
+  contains 23 global host prefixes. Both workspace profiles and both formal
+  iCloud profiles passed the bundled Surge parser and the profile-contract
+  validator.
+- After the macOS reload, all 35 external resources reported `ready=true`. The
+  effective order is ProxyGFW, GEOIP,CN, the mainland IPv6 supplement, optional
+  filters and `FINAL,...,dns-failed`; no active process-wide DIRECT rule exists.
+- A local HTTP-proxy probe to one exact address from OpenAI's current Voice feed
+  matched `ChatGPTVoice.list` and followed ChatGPT to Direct-AI. This verifies
+  the routing rule and policy path, not a real in-app voice session.
+- A Google FCM probe matched `GoogleFCM.list` and followed Google FCM to My Node.
+  The persisted Google FCM and Final selections were explicitly migrated to My
+  Node so a reload cannot silently preserve their retired selections.
+- A probe to one of the observed WeChat-family IPv6 literals matched SukkaW's
+  mainland IPv6 ruleset and selected DIRECT. The connection itself could not be
+  established because that literal had no outgoing interface at probe time;
+  only the classification and policy decision are claimed.
+- A reserved `.invalid` probe caused the preceding GEOIP lookup to return an
+  empty answer and then matched FINAL through My Node. This is direct runtime
+  evidence for the `dns-failed` modifier and proxy-first catch-all contract.
+- The macOS Wi-Fi HTTP, HTTPS and SOCKS system proxies remained disabled. The
+  rollout therefore preserves the existing Enhanced/TUN-only operating mode.
+- The base profile's MITM material and the active module-provided MITM hosts are
+  intentionally unchanged. The five-minute provider subscription lifecycle is
+  also unchanged; `ready=true` proves the current cache is usable, not that an
+  expired URL can be re-imported after cache deletion.
+
+The remaining acceptance boundary is deliberately narrow: run New Siri/Apple
+Intelligence and an actual ChatGPT Voice call on the target devices, and inspect
+the iPhone/iPad Recent Requests for representative domestic applications. Do
+not promote candidate Apple domains or add app-specific exceptions without that
+evidence.
 
 ## Release and rollback
 
