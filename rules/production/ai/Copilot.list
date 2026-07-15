@@ -1,0 +1,9 @@
+# Purpose: GitHub Copilot-specific endpoints that can safely use the Copilot policy.
+# Source: https://docs.github.com/en/copilot/reference/copilot-allowlist-reference
+# Generic github.com/api.github.com and shared Azure download hosts stay in ordinary rules.
+# Last reviewed: 2026-07-15
+DOMAIN,copilot-proxy.githubusercontent.com
+DOMAIN,copilot-reports.github.com
+DOMAIN,copilot-telemetry.githubusercontent.com
+DOMAIN,origin-tracker.githubusercontent.com
+DOMAIN-SUFFIX,githubcopilot.com

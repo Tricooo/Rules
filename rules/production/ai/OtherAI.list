@@ -1,6 +1,9 @@
 # Purpose: Small AI services that do not justify a dedicated Surge policy.
-# Sources: service-owned domains and existing user-observed endpoints.
-# Last reviewed: 2026-07-14
+# Sources: https://www.diabrowser.com/, https://www.jetbrains.com/ai/,
+# https://www.meta.ai/, https://mistral.ai/, https://www.trae.ai/
+# trae-api-sg.mchost.guru is a narrow user-observed endpoint; the hostname is
+# retained pending another request-log review and is not claimed as official.
+# Last reviewed: 2026-07-15
 # Dia
 DOMAIN-SUFFIX,diabrowser.engineering
 DOMAIN-SUFFIX,diabrowser.com

@@ -52,20 +52,49 @@ FORBIDDEN_INLINE_AI_SUFFIXES = {
     "googleusercontent.com",
 }
 
-APPLE_AI_BASELINE = {
+APPLE_AI_OFFICIAL_BASELINE = {
     ("DOMAIN", "guzzoni.apple.com"),
     ("DOMAIN-SUFFIX", "smoot.apple.com"),
     ("DOMAIN-SUFFIX", "apple-relay.apple.com"),
     ("DOMAIN-SUFFIX", "apple-relay.cloudflare.com"),
     ("DOMAIN-SUFFIX", "apple-relay.fastly-edge.com"),
     ("DOMAIN", "cp4.cloudflare.com"),
+}
+
+APPLE_AI_COMMUNITY_BASELINE = {
     ("DOMAIN-SUFFIX", "siri.apple.com"),
+}
+
+APPLE_AI_BASELINE = APPLE_AI_OFFICIAL_BASELINE | APPLE_AI_COMMUNITY_BASELINE
+
+APPLE_AI_CANDIDATE_DOMAINS = {
+    "apple-relay.akamaized.net",
+    "apple-relay.mask.apple-dns.net",
+    "appleintelligencefeedback.care.apple.com",
+    "cp10.cloudflare.com",
+    "gateway.icloud.com",
+    "gspe1-ssl.ls.apple.com",
+    "humb.apple.com",
+    "sequoia.apple.com",
 }
 
 MAINLAND_IPV6_RULESET_URLS = {
     "https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf",
     "https://ruleset.skk.moe/List/ip/china_ip_ipv6.conf",
 }
+
+CHATGPT_RULESET_URL = (
+    "https://raw.githubusercontent.com/Tricooo/Rules/release/"
+    "rules/production/ai/ChatGPT.list"
+)
+CHATGPT_VOICE_RULESET_URL = (
+    "https://raw.githubusercontent.com/Tricooo/Rules/release/"
+    "rules/production/ai/ChatGPTVoice.list"
+)
+COPILOT_RULESET_URL = (
+    "https://raw.githubusercontent.com/Tricooo/Rules/release/"
+    "rules/production/ai/Copilot.list"
+)
 
 AI_POLICY_SUFFIXES = (
     "iCloud Private",
@@ -226,7 +255,10 @@ def policy_has_suffix(policy: str, suffix: str) -> bool:
 
 
 def group_reaches_policy_suffix(
-    groups: dict[str, tuple[int, str]], start: str, suffixes: tuple[str, ...]
+    references: dict[str, set[str]],
+    group_names: set[str],
+    start: str,
+    suffixes: tuple[str, ...],
 ) -> bool:
     """Return whether a group's explicit reference graph reaches a guarded policy."""
     pending = [start]
@@ -236,10 +268,10 @@ def group_reaches_policy_suffix(
         if current in visited:
             continue
         visited.add(current)
-        for member in group_members(groups[current][1]):
+        for member in references.get(current, set()):
             if any(policy_has_suffix(member, suffix) for suffix in suffixes):
                 return True
-            if member in groups and member not in visited:
+            if member in group_names and member not in visited:
                 pending.append(member)
     return False
 
@@ -372,8 +404,19 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
         if policy not in defined_policies:
             errors.append(f"line {line_no}: rule references undefined policy {policy}")
 
+        if rule_type == "FINAL" and policy.upper() != "DIRECT":
+            modifiers = {
+                field.strip().strip('"').lower() for field in fields[policy_index + 1 :]
+            }
+            if "dns-failed" not in modifiers:
+                errors.append(f"line {line_no}: proxy-first FINAL must use dns-failed")
+
         if platform == "ios" and rule_type == "PROCESS-NAME":
             errors.append(f"line {line_no}: PROCESS-NAME is not available on iOS")
+        if platform == "mac" and rule_type == "PROCESS-NAME" and policy.upper() == "DIRECT":
+            errors.append(
+                f"line {line_no}: process-wide DIRECT bypasses service and domain policies; use narrow domain or network rules"
+            )
 
         if rule_type == "DOMAIN-SUFFIX" and len(fields) > 1:
             domain = fields[1].lower().strip().strip('"')
@@ -396,6 +439,50 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
         errors.append("[Rule] has no active rules")
     elif split_fields(rules[-1][1])[0].upper() != "FINAL":
         errors.append(f"line {rules[-1][0]}: last active rule must be FINAL")
+
+    chatgpt_records = [
+        (rule_type, fields[1].strip().strip('"'))
+        for _, rule_type, fields, policy in rule_records
+        if len(fields) > 1 and policy_has_suffix(policy, "ChatGPT")
+    ]
+    chatgpt_rulesets = {
+        condition for rule_type, condition in chatgpt_records if rule_type == "RULE-SET"
+    }
+    if CHATGPT_RULESET_URL not in chatgpt_rulesets:
+        errors.append("ChatGPT production ruleset is missing")
+    if CHATGPT_VOICE_RULESET_URL not in chatgpt_rulesets:
+        errors.append("ChatGPT Voice ruleset is missing")
+    approved_chatgpt_records = {
+        ("RULE-SET", CHATGPT_RULESET_URL),
+        ("RULE-SET", CHATGPT_VOICE_RULESET_URL),
+    }
+    if len(chatgpt_records) != 2 or set(chatgpt_records) != approved_chatgpt_records:
+        errors.append("ChatGPT policy may only use the approved domain and Voice rulesets")
+    for line_no, rule_type, fields, policy in rule_records:
+        if (
+            rule_type == "RULE-SET"
+            and len(fields) > 1
+            and fields[1].strip().strip('"') == CHATGPT_VOICE_RULESET_URL
+            and policy_has_suffix(policy, "ChatGPT")
+        ):
+            modifiers = {field.strip().strip('"').lower() for field in fields[3:]}
+            if "no-resolve" not in modifiers:
+                errors.append(f"line {line_no}: ChatGPT Voice ruleset must use no-resolve")
+
+    copilot_records = [
+        (rule_type, fields[1].strip().strip('"'))
+        for _, rule_type, fields, policy in rule_records
+        if len(fields) > 1 and policy_has_suffix(policy, "GitHub Copilot")
+    ]
+    copilot_rulesets = {
+        condition for rule_type, condition in copilot_records if rule_type == "RULE-SET"
+    }
+    if COPILOT_RULESET_URL not in copilot_rulesets:
+        errors.append("Copilot production ruleset is missing")
+    if len(copilot_records) != 1 or set(copilot_records) != {
+        ("RULE-SET", COPILOT_RULESET_URL)
+    }:
+        errors.append("GitHub Copilot policy may only use the approved production ruleset")
 
     webshare_names = [name for name in proxies if "webshare" in name.lower()]
     for name in webshare_names:
@@ -489,7 +576,9 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             errors.append(
                 f"line {groups[name][0]}: {name} must not use dedicated AI policies"
             )
-        elif group_reaches_policy_suffix(groups, name, dedicated_suffixes):
+        elif group_reaches_policy_suffix(
+            references, set(groups), name, dedicated_suffixes
+        ):
             errors.append(
                 f"line {groups[name][0]}: {name} reaches a dedicated AI policy through another group"
             )
@@ -510,6 +599,14 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             for suffix in ("ChatGPT", "AI Egress", "Apple Intelligence")
         ):
             errors.append(f"line {groups[final_group][0]}: Final must not default to an AI policy")
+
+    for suffix in ("X", "Reddit", "Proxy Media", "Google FCM"):
+        name = find_named_suffix(groups, suffix)
+        if name is None or not any(policy == name for _, _, _, policy in rule_records):
+            continue
+        members = group_members(groups[name][1])
+        if not members or not policy_has_suffix(members[0], "My Node"):
+            errors.append(f"line {groups[name][0]}: {name} must default to My Node")
 
     for suffix, expected_flag in REGION_FLAGS.items():
         name = find_named_suffix(groups, suffix)
@@ -559,6 +656,15 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             errors.append("macOS My Node must reference Auto-SSID")
         elif group_members(groups[my_node][1])[0] != auto_ssid:
             errors.append(f"line {groups[my_node][0]}: macOS My Node must default to Auto-SSID")
+        global_direct = find_named_suffix(groups, "Global Direct")
+        if global_direct is None:
+            errors.append("missing macOS Global Direct policy group")
+        else:
+            direct_members = group_members(groups[global_direct][1])
+            if not direct_members or direct_members[0].upper() != "DIRECT":
+                errors.append(
+                    f"line {groups[global_direct][0]}: macOS Global Direct must default to DIRECT"
+                )
 
     normal_cf_group = find_named_suffix(groups, "Cloudflare Auto" if platform == "ios" else "CF-Auto")
     ai_cf_group = find_named_suffix(groups, "CF-AI-Auto")
@@ -624,6 +730,18 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
     }
     for missing in sorted(APPLE_AI_BASELINE - apple_ai_conditions):
         errors.append(f"Apple Intelligence baseline is missing {missing[0]},{missing[1]}")
+    for line_no, rule_type, fields in apple_ai_records:
+        candidate_domain = (
+            fields[1].lower().strip().strip('"') if len(fields) > 1 else ""
+        )
+        if (
+            rule_type in {"DOMAIN", "DOMAIN-SUFFIX"}
+            and candidate_domain in APPLE_AI_CANDIDATE_DOMAINS
+        ):
+            errors.append(
+                f"line {line_no}: Apple Intelligence candidate {candidate_domain} "
+                "requires request-log promotion"
+            )
     for line_no, rule_type, _ in apple_ai_records:
         if rule_type in {"IP-CIDR", "IP-CIDR6", "GEOIP"}:
             errors.append(f"line {line_no}: Apple Intelligence must not use broad IP or GEOIP rules")
@@ -636,7 +754,11 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
         errors.append("macOS Apple Intelligence baseline is missing PROCESS-NAME,assistantd")
 
     copilot = next(
-        (line_no for line_no, _, fields, _ in rule_records if "/Copilot/" in ",".join(fields)),
+        (
+            line_no
+            for line_no, _, _, policy in rule_records
+            if policy_has_suffix(policy, "GitHub Copilot")
+        ),
         None,
     )
     github = next(
@@ -669,6 +791,18 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             errors.append(f"line {line_no}: mainland IPv6 ruleset must use no-resolve")
 
     mainland_ipv6_positions = [line_no for line_no, _, _ in mainland_ipv6_records]
+    proxy_gfw_positions = [
+        line_no
+        for line_no, _, fields, _ in rule_records
+        if "ProxyGFWlist.list" in ",".join(fields)
+    ]
+    if (
+        mainland_ipv6_positions
+        and proxy_gfw_positions
+        and min(mainland_ipv6_positions) < max(proxy_gfw_positions)
+    ):
+        errors.append("mainland IPv6 ruleset must follow proxy/GFW rules")
+
     final_positions = [
         line_no for line_no, rule_type, _, _ in rule_records if rule_type == "FINAL"
     ]
@@ -695,10 +829,23 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
         for line_no, rule_type, fields, _ in rule_records
         if rule_type == "GEOIP" and len(fields) > 1 and fields[1].upper() == "CN"
     ]
-    if mainland_ipv6_positions and geoip_positions and max(mainland_ipv6_positions) > min(
-        geoip_positions
-    ):
-        errors.append("mainland IPv6 ruleset must precede GEOIP,CN")
+    if mainland_ipv6_positions and not geoip_positions:
+        errors.append("mainland IPv6 ruleset requires a preceding GEOIP,CN fallback")
+    elif mainland_ipv6_positions and min(mainland_ipv6_positions) < max(geoip_positions):
+        errors.append("mainland IPv6 ruleset must follow GEOIP,CN")
+    for mainland_line in mainland_ipv6_positions:
+        earlier_records = [record for record in rule_records if record[0] < mainland_line]
+        if not earlier_records:
+            continue
+        _, previous_type, previous_fields, _ = max(
+            earlier_records, key=lambda record: record[0]
+        )
+        if not (
+            previous_type == "GEOIP"
+            and len(previous_fields) > 1
+            and previous_fields[1].upper() == "CN"
+        ):
+            errors.append("mainland IPv6 ruleset must immediately follow GEOIP,CN")
     if filter_positions and geoip_positions and min(filter_positions) < max(geoip_positions):
         errors.append(
             f"line {min(filter_positions)}: optional ad/privacy filters must follow the domestic GEOIP fallback"

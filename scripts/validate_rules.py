@@ -9,7 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOT = ROOT / "rules" / "production"
 LEGACY_ACTIVE = [
+    ROOT / "AI" / "ChatGPT.list",
     ROOT / "AI" / "Claude.list",
+    ROOT / "AI" / "Github Copilot.list",
     ROOT / "AI" / "Gemini.list",
     ROOT / "AI" / "Gork.list",
     ROOT / "AI" / "Grok.list",
@@ -26,8 +28,10 @@ OTHER_TYPES = {"GEOIP", "PROCESS-NAME", "URL-REGEX"}
 ALLOWED_TYPES = DOMAIN_TYPES | IP_TYPES | OTHER_TYPES
 
 DANGEROUS_AI_SUFFIXES = {
+    "algolia.net",
     "apple.com",
     "apple-dns.net",
+    "auth0.com",
     "browser-intake-datadoghq.com",
     "cloudflare.com",
     "featureassets.org",
@@ -35,8 +39,14 @@ DANGEROUS_AI_SUFFIXES = {
     "googleapis.com",
     "googleusercontent.com",
     "icloud.com",
+    "intercom.io",
+    "intercomcdn.com",
     "launchdarkly.com",
+    "livekit.cloud",
     "mzstatic.com",
+    "segment.io",
+    "sentry.io",
+    "stripe.com",
 }
 
 

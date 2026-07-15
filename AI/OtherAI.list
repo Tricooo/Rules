@@ -1,5 +1,6 @@
 # Compatibility mirror. New profiles use rules/production/ai/OtherAI.list.
-# Last reviewed: 2026-07-14
+# Evidence and review metadata live in the production file.
+# Last reviewed: 2026-07-15
 # Dia
 DOMAIN-SUFFIX,diabrowser.engineering
 DOMAIN-SUFFIX,diabrowser.com
