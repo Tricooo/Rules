@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.validate_surge_profile import validate_profile
+from scripts.validate_surge_profile import REGION_REQUIRED_ALIASES, validate_profile
 
 
 CHINA_IPV6_RULESET_URL = "https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf"
@@ -156,6 +156,45 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         errors, _ = self.validate(profile, "mac")
         self.assertTrue(any("must retain Emoji" in item for item in errors))
 
+    def test_proxy_and_policy_group_name_collision_is_rejected(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Final = select, My Node, Auto Selection, DIRECT",
+            "CF = select, DIRECT\nFinal = select, My Node, Auto Selection, DIRECT",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(
+            any("proxy and policy-group share the same name: CF" in item for item in errors)
+        )
+
+    def test_duplicate_host_mapping_is_rejected(self) -> None:
+        profile = BASE_IOS_PROFILE + (
+            "\n[Host]\nexample.test = 192.0.2.1\nexample.test = 192.0.2.2\n"
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("duplicate host name example.test" in item for item in errors))
+
+    def test_host_mapping_cycle_is_rejected(self) -> None:
+        profile = BASE_IOS_PROFILE + (
+            "\n[Host]\na.example.test = b.example.test\n"
+            "b.example.test = a.example.test\n"
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("host mapping cycle" in item for item in errors))
+
+    def test_policy_path_group_requires_explicit_update_interval(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Final = select, My Node, Auto Selection, DIRECT",
+            "Manual Selection = select, policy-path=https://example.invalid/policies\n"
+            "Final = select, My Node, Auto Selection, DIRECT",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(
+            any(
+                "policy-path group Manual Selection must declare update-interval" in item
+                for item in errors
+            )
+        )
+
     def test_mac_apple_intelligence_keeps_assistantd(self) -> None:
         profile = build_mac_profile()
         assistant_rule = "PROCESS-NAME,assistantd,🌈 Apple Intelligence\n"
@@ -257,6 +296,26 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         )
         errors, _ = self.validate(profile)
         self.assertTrue(any("ChinaIp.list duplicates" in item for item in errors))
+
+    def test_multicast_224_rule_is_rejected_when_tun_already_excludes_224(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "GEOIP,CN,DIRECT\n",
+            "IP-CIDR,224.0.0.0/4,DIRECT,no-resolve\nGEOIP,CN,DIRECT\n",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(
+            any("multicast rule 224.0.0.0/4 is redundant" in item for item in errors)
+        )
+
+    def test_multicast_239_rule_is_rejected_when_tun_already_excludes_224(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "GEOIP,CN,DIRECT\n",
+            "IP-CIDR,239.0.0.0/8,DIRECT,no-resolve\nGEOIP,CN,DIRECT\n",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(
+            any("multicast rule 239.0.0.0/8 is redundant" in item for item in errors)
+        )
 
     def test_mainland_ipv6_ruleset_is_required(self) -> None:
         profile = BASE_IOS_PROFILE.replace(CHINA_IPV6_IOS_RULE + "\n", "")
@@ -372,14 +431,35 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         errors, _ = self.validate(profile, "mac")
         self.assertTrue(any("process-wide DIRECT" in item for item in errors))
 
-    def test_unused_composite_group_is_rejected(self) -> None:
+    def test_unused_group_is_rejected_regardless_of_name(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
             "Final = select, My Node, Auto Selection, DIRECT",
-            'Asia = smart, include-other-group="US Node"\n'
+            "Orphan = select, DIRECT\n"
             "Final = select, My Node, Auto Selection, DIRECT",
         )
         errors, _ = self.validate(profile)
-        self.assertTrue(any("unused composite policy group Asia" in item for item in errors))
+        self.assertTrue(any("unused policy group Orphan" in item for item in errors))
+
+    def test_unreachable_group_tree_is_rejected(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Final = select, My Node, Auto Selection, DIRECT",
+            "Orphan Parent = select, Orphan Child\n"
+            "Orphan Child = select, DIRECT\n"
+            "Final = select, My Node, Auto Selection, DIRECT",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("unused policy group Orphan Parent" in item for item in errors))
+        self.assertTrue(any("unused policy group Orphan Child" in item for item in errors))
+
+    def test_manual_root_and_its_references_are_allowed(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "Final = select, My Node, Auto Selection, DIRECT",
+            "Manual Selection = select, Utility\n"
+            "Utility = select, DIRECT\n"
+            "Final = select, My Node, Auto Selection, DIRECT",
+        )
+        errors, _ = self.validate(profile)
+        self.assertEqual([], errors)
 
     def test_ios_must_not_define_ai_egress(self) -> None:
         profile = BASE_IOS_PROFILE.replace(
@@ -532,6 +612,66 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         )
         errors, _ = self.validate(profile)
         self.assertTrue(any("Samoa flag" in item for item in errors))
+
+    def test_region_alias_contract_includes_common_simplified_and_traditional_names(self) -> None:
+        self.assertEqual(
+            {
+                "HK Node": ("香港",),
+                "TW Node": (
+                    "台湾",
+                    "臺灣",
+                    "桃园",
+                    "桃園",
+                    "台中",
+                    "臺中",
+                    "台南",
+                    "臺南",
+                ),
+                "JP Node": ("日本", "东京", "東京"),
+                "SG Node": ("新加坡", "狮城", "獅城"),
+                "US Node": ("美国", "美國"),
+                "UK Node": ("英国", "英國"),
+                "MY Node": ("马来西亚", "馬來西亞", "大马", "大馬"),
+            },
+            REGION_REQUIRED_ALIASES,
+        )
+
+    def test_region_policy_path_regex_must_compile(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "US Node = smart, CF-us, policy-regex-filter=🇺🇸",
+            "US Node = smart, policy-path=https://example.invalid/us, "
+            "policy-regex-filter=([",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("invalid region regex in US Node" in item for item in errors))
+
+    def test_region_policy_path_regex_requires_chinese_aliases(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "US Node = smart, CF-us, policy-regex-filter=🇺🇸",
+            "US Node = smart, policy-path=https://example.invalid/us, "
+            r"policy-regex-filter=(?i)(🇺🇸|United\s*States)",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("US Node regex is missing alias 美国" in item for item in errors))
+        self.assertTrue(any("US Node regex is missing alias 美國" in item for item in errors))
+
+    def test_us_region_policy_path_rejects_bare_america(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "US Node = smart, CF-us, policy-regex-filter=🇺🇸",
+            "US Node = smart, policy-path=https://example.invalid/us, "
+            r"policy-regex-filter=(?i)(🇺🇸|美国|美國|United\s*States|America)",
+        )
+        errors, _ = self.validate(profile)
+        self.assertTrue(any("US Node regex must not match bare America" in item for item in errors))
+
+    def test_us_region_policy_path_accepts_united_states_of_america(self) -> None:
+        profile = BASE_IOS_PROFILE.replace(
+            "US Node = smart, CF-us, policy-regex-filter=🇺🇸",
+            "US Node = smart, policy-path=https://example.invalid/us, "
+            r"update-interval=86400, policy-regex-filter=(?i)(🇺🇸|美国|美國|United\s*States(?:\s*of\s*America)?)",
+        )
+        errors, _ = self.validate(profile)
+        self.assertEqual([], errors)
 
     def test_retired_webshare_proxy_is_rejected(self) -> None:
         profile = BASE_IOS_PROFILE.replace(

@@ -96,6 +96,21 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
   lighter lists but evaluates them after the domestic GEOIP fallback.
 - The normal CF smart group includes the base CF proxy and excludes names ending
   in -AI. The AI CF smart group includes only -AI proxies.
+- The two `CF-byoip` proxy variants and their Host mapping were removed from
+  both profiles after the mapped target remained a CNAME with no usable A or
+  AAAA answer across three independent DoH resolvers and Surge recorded a
+  fatal connection error. The explicit optimized-group references were removed
+  with them; the generic CF regexes need no special exclusion because the
+  proxy names no longer exist.
+- Region policy-path regexes cover common simplified and traditional aliases.
+  The US group no longer contains bare `America`, which could also match Latin,
+  Central or South America. `Manual Selection` now declares the same explicit
+  86400-second resource interval as the other policy-path groups.
+- The two unused iOS advertising groups and five unused macOS service groups
+  were removed together with inert rule templates that referenced disabled
+  policies. `Non-HK` remains an intentionally curated low-latency set that does
+  not include EU or India; the profile comments make that narrower meaning
+  explicit instead of silently widening smart selection.
 - Both profiles default FINAL to My Node so newly blocked or not-yet-catalogued
   domains still receive a proxy route. The maintained direct domain baseline,
   ChinaCompanyIp, the mainland IPv6 ruleset and GEOIP,CN keep known domestic
@@ -127,13 +142,16 @@ placed above them. Static validation therefore blocks known broad AI suffixes.
   Tailscale/VIF path.
 
 The profile-contract validator has regression tests for the Apple bypass,
-official/community Apple Intelligence baseline, candidate quarantine,
-AI-before-broad ordering, China IP duplication, the required mainland IPv6
-source/policy/no-resolve/order, process-wide DIRECT bypasses, proxy-service
-defaults, unused composite groups, cross-platform service-scoped AI egress,
-indirect dedicated-policy leakage, macOS Emoji names and proxy-first FINAL
-behavior. It emits warnings, without exposing values, when MITM material has no
-hostname or a device-specific BSSID still needs human confirmation.
+official/community Apple Intelligence baseline and its compatibility mirror,
+candidate quarantine, AI-before-broad ordering, China IP duplication, the
+required mainland IPv6 source/policy/no-resolve/order, process-wide DIRECT
+bypasses, proxy-service defaults, all unreachable active groups, region regex
+aliases and compilation, explicit policy-path refresh intervals, Proxy/Group
+name collisions, Host duplicates and cycles, redundant multicast rules,
+cross-platform service-scoped AI egress, indirect dedicated-policy leakage,
+macOS Emoji names and proxy-first FINAL behavior. It emits warnings, without
+exposing values, when MITM material has no hostname or a device-specific BSSID
+still needs human confirmation.
 
 ## Mainland literal-IPv6 closure (2026-07-14)
 
@@ -147,10 +165,11 @@ hostname or a device-specific BSSID still needs human confirmation.
   therefore does not add the two observed /128 addresses, a WeChat process rule,
   or an unsafe all-IPv6 DIRECT rule.
 - The production source is SukkaW's mainland-friendly official mirror:
-  `https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf`. The verified
-  2026-07-14 artifact contains 1,620 IP-CIDR6 entries, no IPv4 CIDR, and one
-  maintainer watermark DOMAIN entry. It covers both samples via
-  `2408:8756::/31`; the main server and official mirror were byte-identical.
+  `https://ruleset-mirror.skk.moe/List/ip/china_ip_ipv6.conf`. The checked
+  artifact contains only IPv6 CIDRs plus the maintainer watermark rule and
+  covers both observed samples via `2408:8756::/31`. Its generated rule count
+  is intentionally verified at release time rather than frozen in this
+  document; the main server and official mirror must remain byte-identical.
 - Keep this rule after domain/service/proxy rules and immediately after
   GEOIP,CN. The order covers both literal destinations and a domain address that
   GEOIP already resolved but the MMDB did not classify. Removing this single
@@ -159,23 +178,32 @@ hostname or a device-specific BSSID still needs human confirmation.
 
 ## macOS rollout evidence (2026-07-14 to 2026-07-15)
 
-- The formal iCloud profile was backed up before migration, then synchronized
-  from the checked workspace copy and accepted by Surge's bundled parser.
-- `surge-cli reload` succeeded. The runtime original and formal profile both
-  expose 50 policy groups with identical names; neither contains AI Egress.
+- The formal iCloud profile was backed up before migration and again before the
+  final cleanup, synchronized from the checked workspace copy, and accepted by
+  Surge's bundled parser. A mode-600 safe-baseline copy records the current
+  verified state for future recovery.
+- `surge-cli reload` succeeded. The runtime and formal profile expose the same
+  73 proxy names and 45 policy-group names; neither contains AI Egress or the
+  removed BYOIP policies.
 - The effective profile retains `PROCESS-NAME,assistantd`, uses `FINAL,🧭 Final`,
   retains the `dns-failed` fallback modifier, and keeps My Node as the Final
   group's first policy.
 - Persisted selections using the retired `🇺🇲 US Node` spelling were migrated.
   Apple Intelligence now selects `🇺🇸 US Node`; Other AI selects Auto Selection.
-- Direct-AI responded to a live policy probe. CF-AI-Auto, US Node and Auto
-  Selection each returned at least one available member during group probes.
-- The profile's Proxy and MITM sections are byte-for-byte unchanged from the
-  pre-migration backup. Runtime inspection nevertheless shows that enabled
-  modules add MITM host targets and that MITM/rewrite/scripting are active.
-  Per the owner's decision, this migration does not remove or alter MITM; the
-  distinction is documented so an empty base-profile hostname is not mistaken
-  for “no decryption”.
+- Direct-AI responded to a live TCP policy probe. CF-AI-Auto, US Node and Auto
+  Selection each returned an available member during group probes, and all 35
+  external resources reported ready after reload.
+- Direct-AI and the currently selected CF-AI member both failed Surge's UDP
+  policy probe with a STUN timeout. OpenAI documents UDP 3478 as the preferred
+  ChatGPT Voice path and TCP 443 as a fallback, so ordinary ChatGPT can work
+  while Voice quality or latency remains unverified. Do not claim Voice UDP is
+  healthy until the proxy servers and a real in-app call prove it.
+- MITM material is byte-for-byte unchanged. The final cleanup changes the
+  Proxy section only by removing the two verified-dead BYOIP definitions; no
+  other proxy credential or endpoint was rewritten. Runtime inspection still
+  shows that enabled modules add MITM host targets and that
+  MITM/rewrite/scripting are active. Per the owner's decision, this migration
+  does not remove or alter MITM.
 
 These controller and reachability checks do not prove application semantics.
 Siri/Apple Intelligence actions, an actual ChatGPT Voice session and
@@ -184,22 +212,27 @@ end-to-end verified.
 
 ## Completion audit (2026-07-15)
 
-- The reviewed functional release is `1d37920dc7bd3a274a6dc45887cba0a97ab610f9`.
-  `main`, `release` and `codex/rules-v2` point to that object; all three raw
-  ChatGPT, ChatGPT Voice and Copilot production URLs returned HTTP 200 with
-  content hashes equal to the local files. The three branch CI runs completed
-  successfully.
-- The final local gate passed 61 unit tests, validated 19 files containing 68
+- The reviewed functional source release is
+  `1d37920dc7bd3a274a6dc45887cba0a97ab610f9`; the prior published runtime-
+  evidence checkpoint is `a2bc14aa635dec6b8aa4c496a4f678737a9fd283`.
+  The current release head is deliberately verified with `git ls-remote` and
+  its Actions run instead of embedding a self-referential SHA in the commit
+  that contains this document.
+- The final local gate passed 75 unit tests, validated 19 files containing 67
   production rules, and confirmed that the current official OpenAI Voice feed
-  contains 23 global host prefixes. Both workspace profiles and both formal
-  iCloud profiles passed the bundled Surge parser and the profile-contract
-  validator.
+  contains 23 global host prefixes. iOS validates as 73 proxies / 41 groups /
+  37 active rules; macOS validates as 73 / 45 / 44. Both workspace profiles and
+  both formal iCloud profiles passed the bundled Surge parser and the
+  profile-contract validator.
 - After the macOS reload, all 35 external resources reported `ready=true`. The
   effective order is ProxyGFW, GEOIP,CN, the mainland IPv6 supplement, optional
   filters and `FINAL,...,dns-failed`; no active process-wide DIRECT rule exists.
 - A local HTTP-proxy probe to one exact address from OpenAI's current Voice feed
   matched `ChatGPTVoice.list` and followed ChatGPT to Direct-AI. This verifies
   the routing rule and policy path, not a real in-app voice session.
+- Fresh UDP and NAT probes failed on both dedicated AI choices, while the TCP
+  Direct-AI test succeeded. OpenAI's documented TCP 443 fallback may preserve
+  functionality, but this remains a medium-risk Voice performance boundary.
 - A Google FCM probe matched `GoogleFCM.list` and followed Google FCM to My Node.
   The persisted Google FCM and Final selections were explicitly migrated to My
   Node so a reload cannot silently preserve their retired selections.
@@ -213,9 +246,10 @@ end-to-end verified.
 - The macOS Wi-Fi HTTP, HTTPS and SOCKS system proxies remained disabled. The
   rollout therefore preserves the existing Enhanced/TUN-only operating mode.
 - The base profile's MITM material and the active module-provided MITM hosts are
-  intentionally unchanged. The five-minute provider subscription lifecycle is
-  also unchanged; `ready=true` proves the current cache is usable, not that an
-  expired URL can be re-imported after cache deletion.
+  intentionally unchanged. The five-minute provider subscription lifecycle on
+  both platforms is also unchanged; Mac `ready=true` proves its current cache
+  is usable, not that an expired URL can be re-imported after cache deletion.
+  iOS cache readiness still requires device inspection.
 
 The remaining acceptance boundary is deliberately narrow: run New Siri/Apple
 Intelligence and an actual ChatGPT Voice call on the target devices, and inspect
@@ -236,18 +270,24 @@ evidence.
 
 ### Profile rollback runbook
 
-1. Keep the timestamped `bak-before-dns-failed-20260715` files beside the two
-   formal profiles; do not edit the backup in place.
-2. Restore the affected platform's formal profile from that backup and copy the
-   same content back to the workspace copy so future edits do not reintroduce
-   the failed version.
-3. Run `surge-cli --check` against both the restored formal file and workspace
-   copy before reloading.
-4. On macOS, reload Surge and inspect the effective FINAL rule, the
+1. Keep `bak-safe-baseline-20260715` beside each formal profile with mode 600.
+   It is the preferred full-profile recovery point for changes made after this
+   audit; do not edit it in place.
+2. Treat `bak-before-final-cleanup-20260715` as a forensic comparison snapshot,
+   not a default restore target. A whole-file restore reintroduces the dead
+   BYOIP pair, the broad US regex and the removed unused groups.
+3. Older `bak-before-ai-source-rollout-20260715` and
+   `bak-before-dns-failed-20260715` files are historical pre-change snapshots.
+   Whole-file restore can also reintroduce broad community AI sources, old
+   process-level DIRECT behavior, stale IPv6 ordering or a FINAL without
+   `dns-failed`. Use an exact reverse patch for one change family instead.
+4. Restore the chosen safe content to both the formal and workspace copy, then
+   run `surge-cli --check` against both files before reloading.
+5. On macOS, reload Surge and inspect the effective FINAL rule, the
    GEOIP/IPv6 ordering, external-resource readiness and relevant persisted group
    selections. On iOS, reload the profile and confirm representative traffic in
    Recent Requests.
-5. Roll back a published rule release with a normal revert commit promoted to
+6. Roll back a published rule release with a normal revert commit promoted to
    `release`; never rewrite branch history that active profiles may be fetching.
 
 ## Deferred decisions
@@ -260,18 +300,31 @@ evidence.
 - Apple Intelligence candidate domains remain disabled by default.
 - The macOS BSSID selector remains until the owner confirms whether the old
   company Wi-Fi mapping is still needed.
-- The Mac Sub-Store collection URL is intentionally short-lived for provider
-  risk control. Runtime cache can remain ready after refreshes start returning
-  HTTP 500, but a re-import or cache purge would then have no recovery source.
-  Refresh/re-sign automation must be solved with the provider; the URL is not
-  replaced or published here.
+- The shared iOS/macOS Sub-Store collection URL is intentionally short-lived
+  for provider risk control. Runtime cache can remain ready after refreshes
+  start returning HTTP 500, but a re-import or cache purge would then have no
+  recovery source. Refresh/re-sign automation must be solved with the provider;
+  the URL is not replaced or published here.
 - The repeated Sub-Store policy path is a maintenance concern, not twelve live
   downloads: Surge deduplicates it into one external resource. Refactor only
   after the short-lived refresh lifecycle is reproducible.
 - GitHub branch protection is not enabled in this migration. CI verifies a
   pushed commit but cannot prevent an unreviewed `release` update; enabling
   protection is a separate repository-administration decision.
-- For external Tailscale, the current Mac TUN exclusions are intentional. If
-  System Proxy is later enabled, align `skip-proxy`; if Surge's built-in
-  Tailscale is enabled, remove the TUN exclusions and add explicit Tailnet
-  policy/rules instead.
+- Four dynamic IPv6 subscription members produced transient empty-answer events
+  during one reload, but direct DoH checks later returned valid AAAA-only
+  answers from three resolvers. They are not reproducibly broken and are not
+  filtered locally; only a repeated device failure should reopen that decision.
+- `read-etc-hosts=true` remains meaningful on this Mac because `/etc/hosts`
+  contains one custom entry. Removing it without checking that dependency would
+  be a behavior change, not cleanup.
+- For external Tailscale, the current exclusions are intentional. iOS excludes
+  100.64.0.0/10 from TUN and handles ULA through the LAN direct layer; macOS
+  also retains its Tailnet ULA exclusion. The installed Surge Mac is 6.6.0,
+  below the official 6.7.0+ built-in Tailscale requirement. After upgrading and
+  choosing Surge's built-in policy, remove conflicting TUN exclusions and add
+  explicit Tailnet policy/rules instead.
+- The current iCloud Private Relay list is reachable and does not shadow the
+  Apple Intelligence baseline, but its own header has not changed since 2024.
+  Monitor it rather than replacing a stable six-host list without request-log
+  evidence.

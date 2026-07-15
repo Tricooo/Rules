@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from scripts.validate_surge_profile import APPLE_AI_BASELINE
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,6 +34,10 @@ class LegacyMirrorTest(unittest.TestCase):
             for mirror in mirrors:
                 with self.subTest(production=production, mirror=mirror):
                     self.assertEqual(expected, active_rules(ROOT / mirror))
+
+    def test_apple_intelligence_legacy_baseline_matches_profile_contract(self) -> None:
+        expected = {f"{rule_type},{condition}" for rule_type, condition in APPLE_AI_BASELINE}
+        self.assertEqual(expected, set(active_rules(ROOT / "AI/Apple Intelligence.list")))
 
 
 if __name__ == "__main__":

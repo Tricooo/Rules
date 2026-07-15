@@ -84,11 +84,14 @@ rule type has been checked for Surge compatibility.
 5. Run scripts/validate_surge_profile.py with --platform ios or --platform mac
    against the local profile copy. The validator reports references and line
    numbers without printing proxy credentials. It also enforces the agreed AI
-   order, stable defaults, platform naming, subnet selectors, CF filters and
-   domestic-IP de-duplication and the mainland IPv6 fallback contract.
-   Proxy-first FINAL rules must also retain `dns-failed`, so a local lookup
-   failure can still be handed to the selected proxy policy.
+   order, stable defaults, platform naming, subnet selectors, CF filters,
+   region-regex aliases, explicit policy-path refresh intervals, reachable
+   policy groups, Proxy/Group name separation, Host-map integrity, multicast
+   de-duplication and the mainland IPv6 fallback contract. Proxy-first FINAL
+   rules must also retain `dns-failed`, so a local lookup failure can still be
+   handed to the selected proxy policy.
 6. Review the profile diff, publish to release, then update profile URLs.
-7. Keep one rollback snapshot per change family.
+7. Keep one mode-600 verified safe baseline. Treat older pre-change snapshots
+   as forensic inputs unless their known regressions have been reviewed.
 
 See docs/rule-governance.md for the detailed decisions and safety boundaries.

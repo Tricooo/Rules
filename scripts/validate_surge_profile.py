@@ -129,6 +129,23 @@ REGION_FLAGS = {
     "MY Node": "🇲🇾",
 }
 
+REGION_REQUIRED_ALIASES = {
+    "HK Node": ("香港",),
+    "TW Node": ("台湾", "臺灣", "桃园", "桃園", "台中", "臺中", "台南", "臺南"),
+    "JP Node": ("日本", "东京", "東京"),
+    "SG Node": ("新加坡", "狮城", "獅城"),
+    "US Node": ("美国", "美國"),
+    "UK Node": ("英国", "英國"),
+    "MY Node": ("马来西亚", "馬來西亞", "大马", "大馬"),
+}
+
+MANUAL_ROOT_GROUP_SUFFIXES = (
+    "Manual Selection",
+    "Policy Selection",
+    "Cloudflare Auto",
+    "CF-Auto",
+)
+
 EMOJI_RE = re.compile(
     "["
     "\U0001F1E6-\U0001F1FF"
@@ -332,6 +349,54 @@ def detect_cycles(graph: dict[str, set[str]], group_names: set[str]) -> list[str
     return errors
 
 
+def detect_host_cycles(hosts: dict[str, tuple[int, str]]) -> list[str]:
+    graph: dict[str, str] = {}
+    for hostname, (_, value) in hosts.items():
+        target = value.strip().strip('"').split(",", 1)[0].strip()
+        if target.lower().startswith("server:") or target not in hosts:
+            continue
+        graph[hostname] = target
+
+    errors: list[str] = []
+    visited: set[str] = set()
+    for start in sorted(graph):
+        if start in visited:
+            continue
+        chain: list[str] = []
+        positions: dict[str, int] = {}
+        current = start
+        while current in graph and current not in visited:
+            if current in positions:
+                cycle = chain[positions[current] :] + [current]
+                errors.append("host mapping cycle: " + " -> ".join(cycle))
+                break
+            positions[current] = len(chain)
+            chain.append(current)
+            current = graph[current]
+        visited.update(chain)
+    return errors
+
+
+def reachable_policy_groups(
+    references: dict[str, set[str]],
+    group_names: set[str],
+    roots: set[str],
+) -> set[str]:
+    reachable: set[str] = set()
+    pending = list(roots & group_names)
+    while pending:
+        current = pending.pop()
+        if current in reachable:
+            continue
+        reachable.add(current)
+        pending.extend(
+            child
+            for child in references.get(current, set())
+            if child in group_names and child not in reachable
+        )
+    return reachable
+
+
 def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], dict[str, int]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -341,8 +406,14 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
 
     proxies, proxy_errors = parse_named_entries(sections.get("Proxy", []), "proxy")
     groups, group_errors = parse_named_entries(sections.get("Proxy Group", []), "policy-group")
+    hosts, host_errors = parse_named_entries(sections.get("Host", []), "host")
     errors.extend(proxy_errors)
     errors.extend(group_errors)
+    errors.extend(host_errors)
+
+    for name in sorted(set(proxies) & set(groups)):
+        errors.append(f"proxy and policy-group share the same name: {name}")
+    errors.extend(detect_host_cycles(hosts))
 
     references, reference_errors = extract_group_references(groups)
     errors.extend(reference_errors)
@@ -368,6 +439,13 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
         ):
             errors.append(
                 f"line {line_no}: include-other-group in {group_name} must be one quoted comma-separated value"
+            )
+        if (
+            group_parameter(value, "policy-path") is not None
+            and group_parameter(value, "update-interval") is None
+        ):
+            errors.append(
+                f"line {line_no}: policy-path group {group_name} must declare update-interval"
             )
     if platform == "ios":
         for name, (line_no, _) in groups.items():
@@ -507,6 +585,17 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             errors.append(
                 f"line {tun_excluded[0]}: 239.0.0.0/8 is redundant when 224.0.0.0/4 is excluded"
             )
+        if "224.0.0.0/4" in excluded:
+            for line_no, rule_type, fields, _ in rule_records:
+                condition = fields[1].strip().strip('"') if len(fields) > 1 else ""
+                if rule_type == "IP-CIDR" and condition in {
+                    "224.0.0.0/4",
+                    "239.0.0.0/8",
+                }:
+                    errors.append(
+                        f"line {line_no}: multicast rule {condition} is redundant because "
+                        "tun-excluded-routes already excludes 224.0.0.0/4"
+                    )
 
     for option in ("http-listen", "socks5-listen"):
         listen = general.get(option)
@@ -619,13 +708,51 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             errors.append(f"line {groups[name][0]}: Taiwan group contains the Samoa flag")
         if re.search(r"(?:^|[|(])(?:港|台|新)(?=[|)])", value):
             errors.append(f"line {groups[name][0]}: {name} contains an over-broad single-character region match")
+        if group_parameter(value, "policy-path") is None:
+            continue
+        pattern = group_parameter(value, "policy-regex-filter")
+        if not pattern:
+            errors.append(f"line {groups[name][0]}: {name} is missing policy-regex-filter")
+            continue
+        try:
+            compiled = re.compile(pattern)
+        except re.error as exc:
+            errors.append(f"line {groups[name][0]}: invalid region regex in {name}: {exc}")
+            continue
+        for alias in REGION_REQUIRED_ALIASES[suffix]:
+            if compiled.search(alias) is None:
+                errors.append(f"line {groups[name][0]}: {name} regex is missing alias {alias}")
+        if suffix == "US Node" and any(
+            compiled.search(sample)
+            for sample in (
+                "America",
+                "North America",
+                "South America",
+                "Central America",
+                "Latin America",
+            )
+        ):
+            errors.append(f"line {groups[name][0]}: US Node regex must not match bare America")
 
+    rule_group_roots = {
+        policy for _, _, _, policy in rule_records if policy in groups
+    }
+    manual_group_roots = {
+        name
+        for name in groups
+        if any(
+            policy_has_suffix(name, suffix)
+            for suffix in MANUAL_ROOT_GROUP_SUFFIXES
+        )
+    }
+    reachable_groups = reachable_policy_groups(
+        references,
+        set(groups),
+        rule_group_roots | manual_group_roots,
+    )
     for group_name, (line_no, _) in groups.items():
-        if group_name.endswith(("Asia", "Western")):
-            used_by_group = any(group_name in refs for refs in references.values())
-            used_by_rule = any(policy == group_name for _, _, _, policy in rule_records)
-            if not used_by_group and not used_by_rule:
-                errors.append(f"line {line_no}: unused composite policy group {group_name}")
+        if group_name not in reachable_groups:
+            errors.append(f"line {line_no}: unused policy group {group_name}")
 
     if platform == "ios":
         my_node = find_named_suffix(groups, "My Node")

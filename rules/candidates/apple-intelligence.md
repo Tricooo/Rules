@@ -44,7 +44,12 @@ already covered and must not be duplicated.
 
 - apple-relay.mask.apple-dns.net: likely overlaps Private Relay infrastructure.
 - humb.apple.com: Apple currently documents it for device setup, Tap to Pay,
-  and ID verification, not under Apple Intelligence.
+  and ID verification, not under Apple Intelligence. OpenAI also lists it as a
+  ChatGPT connectivity dependency, so its presence in an iOS request log is
+  evidence of shared Apple/App Attest infrastructure, not proof that the
+  request belongs to Apple Intelligence. See the
+  [OpenAI network recommendations](https://help.openai.com/en/articles/9247338-network-recommendations-for-chatgpt-errors-on-web-and-apps), checked
+  2026-07-15.
 - gspe1-ssl.ls.apple.com: also associated with geolocation-dependent Apple
   services.
 - gateway.icloud.com: not proven to be AI-exclusive.
