@@ -95,6 +95,10 @@ COPILOT_RULESET_URL = (
     "https://raw.githubusercontent.com/Tricooo/Rules/release/"
     "rules/production/ai/Copilot.list"
 )
+APPLE_NEWS_RULESET_URL = (
+    "https://raw.githubusercontent.com/Tricooo/Rules/release/"
+    "rules/production/apple/AppleNews.list"
+)
 
 AI_POLICY_SUFFIXES = (
     "iCloud Private",
@@ -791,6 +795,46 @@ def validate_profile(path: Path, platform: str) -> tuple[list[str], list[str], d
             if not direct_members or direct_members[0].upper() != "DIRECT":
                 errors.append(
                     f"line {groups[global_direct][0]}: macOS Global Direct must default to DIRECT"
+                )
+        apple_news = find_named_suffix(groups, "Apple News")
+        if apple_news is None:
+            errors.append("missing macOS Apple News policy group")
+        else:
+            if apple_news != "📰 Apple News":
+                errors.append(
+                    f"line {groups[apple_news][0]}: macOS Apple News policy group "
+                    "must be named 📰 Apple News"
+                )
+            apple_news_members = group_members(groups[apple_news][1])
+            if not apple_news_members or not policy_has_suffix(
+                apple_news_members[0], "US Node"
+            ):
+                errors.append(
+                    f"line {groups[apple_news][0]}: macOS Apple News must default to US Node"
+                )
+            apple_news_rule_lines = [
+                line_no
+                for line_no, _, _, policy in rule_records
+                if policy == apple_news
+            ]
+            if not apple_news_rule_lines:
+                errors.append(
+                    f"line {groups[apple_news][0]}: macOS Apple News policy group "
+                    "must be referenced by an active rule"
+                )
+            apple_policy = find_named_suffix(groups, "Apple")
+            apple_rule_lines = [
+                line_no
+                for line_no, _, _, policy in rule_records
+                if apple_policy is not None and policy == apple_policy
+            ]
+            if (
+                apple_news_rule_lines
+                and apple_rule_lines
+                and min(apple_news_rule_lines) >= min(apple_rule_lines)
+            ):
+                errors.append(
+                    f"line {min(apple_news_rule_lines)}: Apple News rules must precede ordinary Apple rules"
                 )
 
     normal_cf_group = find_named_suffix(groups, "Cloudflare Auto" if platform == "ios" else "CF-Auto")

@@ -20,6 +20,10 @@ COPILOT_RULESET_URL = (
     "https://raw.githubusercontent.com/Tricooo/Rules/release/"
     "rules/production/ai/Copilot.list"
 )
+APPLE_NEWS_RULESET_URL = (
+    "https://raw.githubusercontent.com/Tricooo/Rules/release/"
+    "rules/production/apple/AppleNews.list"
+)
 CHINA_IPV6_IOS_RULE = (
     f'RULE-SET,{CHINA_IPV6_RULESET_URL},DIRECT,no-resolve,"update-interval=86400"'
 )
@@ -91,8 +95,13 @@ def build_mac_profile() -> str:
         "Global Direct = select, DIRECT\n"
         "My Node = select, Auto-SSID, DIRECT",
     ).replace(
+        "iCloud Private = select, DIRECT",
+        "iCloud Private = select, DIRECT\n"
+        "Apple News = select, US Node, Auto Selection, DIRECT",
+    ).replace(
         "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple",
         "PROCESS-NAME,assistantd,Apple Intelligence\n"
+        f"RULE-SET,{APPLE_NEWS_RULESET_URL},Apple News\n"
         "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,Apple",
     )
     emoji_names = {
@@ -106,6 +115,7 @@ def build_mac_profile() -> str:
         "Grok": "🔥 Grok",
         "Apple Intelligence": "🌈 Apple Intelligence",
         "iCloud Private": "🛡️ iCloud Private",
+        "Apple News": "📰 Apple News",
         "Apple": "🍎 Apple",
         "Global Direct": "🎯 Global Direct",
         "Auto Selection": "♻️ Auto Selection",
@@ -123,6 +133,8 @@ def build_mac_profile() -> str:
         .replace("/ai/🫧 ChatGPT.list", "/ai/ChatGPT.list")
         .replace("/ai/🫧 ChatGPTVoice.list", "/ai/ChatGPTVoice.list")
         .replace("🌈 🍎 Apple Intelligence", "🌈 Apple Intelligence")
+        .replace("📰 🍎 Apple News", "📰 Apple News")
+        .replace("/apple/🍎 AppleNews.list", "/apple/AppleNews.list")
         .replace(
             "https://example.invalid/🍎 Apple_All_No_Resolve.list",
             "https://example.invalid/Apple_All_No_Resolve.list",
@@ -200,6 +212,40 @@ class ValidateSurgeProfileTest(unittest.TestCase):
         assistant_rule = "PROCESS-NAME,assistantd,🌈 Apple Intelligence\n"
         errors, _ = self.validate(profile.replace(assistant_rule, ""), "mac")
         self.assertTrue(any("PROCESS-NAME,assistantd" in item for item in errors))
+
+    def test_mac_apple_news_group_is_required(self) -> None:
+        profile = build_mac_profile().replace(
+            "📰 Apple News = select, 🇺🇸 US Node, ♻️ Auto Selection, DIRECT\n",
+            "",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("missing macOS Apple News policy group" in item for item in errors))
+
+    def test_mac_apple_news_active_rule_is_required(self) -> None:
+        profile = build_mac_profile().replace(
+            f"RULE-SET,{APPLE_NEWS_RULESET_URL},📰 Apple News\n",
+            "",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("must be referenced by an active rule" in item for item in errors))
+
+    def test_mac_apple_news_must_default_to_us_node(self) -> None:
+        profile = build_mac_profile().replace(
+            "📰 Apple News = select, 🇺🇸 US Node, ♻️ Auto Selection, DIRECT",
+            "📰 Apple News = select, ♻️ Auto Selection, 🇺🇸 US Node, DIRECT",
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("Apple News must default to US Node" in item for item in errors))
+
+    def test_mac_apple_news_rules_must_precede_ordinary_apple(self) -> None:
+        news_rule = f"RULE-SET,{APPLE_NEWS_RULESET_URL},📰 Apple News\n"
+        apple_rule = "RULE-SET,https://example.invalid/Apple_All_No_Resolve.list,🍎 Apple\n"
+        profile = build_mac_profile().replace(news_rule, "").replace(
+            apple_rule,
+            apple_rule + news_rule,
+        )
+        errors, _ = self.validate(profile, "mac")
+        self.assertTrue(any("Apple News rules must precede ordinary Apple rules" in item for item in errors))
 
     def test_apple_network_must_not_be_skipped(self) -> None:
         profile = BASE_IOS_PROFILE.replace(

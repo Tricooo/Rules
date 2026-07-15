@@ -1,5 +1,10 @@
 # 内容：AppleNews
-# 数量：3条
-USER-AGENT,AppleNews*
-USER-AGENT,com.apple.news*
-DOMAIN,gspe1-ssl.ls.apple.com
+# 数量：7条
+# 当前 production 镜像；不包含会影响 Apple 地图区域数据的 gspe1-ssl.ls.apple.com
+DOMAIN,c.apple.news
+DOMAIN,news-app-events.apple.com
+DOMAIN,news-client-search.apple.com
+DOMAIN,news-edge.apple.com
+DOMAIN,news-events.apple.com
+DOMAIN,news-todayconfig-edge.apple.com
+DOMAIN,newsletter-edge.apple.com

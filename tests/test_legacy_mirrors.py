@@ -9,6 +9,7 @@ from scripts.validate_surge_profile import APPLE_AI_BASELINE
 ROOT = Path(__file__).resolve().parents[1]
 
 MIRRORS = {
+    "rules/production/apple/AppleNews.list": ("AppleNews.list",),
     "rules/production/ai/ChatGPT.list": ("AI/ChatGPT.list",),
     "rules/production/ai/Claude.list": ("AI/Claude.list",),
     "rules/production/ai/Copilot.list": ("AI/Github Copilot.list",),

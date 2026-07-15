@@ -1,0 +1,10 @@
+# Purpose: Route Apple News-specific traffic without capturing shared Apple or Maps infrastructure.
+# Sources: Surge Mac request log observed 2026-07-15; https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Surge/AppleNews
+# Last reviewed: 2026-07-15
+DOMAIN,c.apple.news
+DOMAIN,news-app-events.apple.com
+DOMAIN,news-client-search.apple.com
+DOMAIN,news-edge.apple.com
+DOMAIN,news-events.apple.com
+DOMAIN,news-todayconfig-edge.apple.com
+DOMAIN,newsletter-edge.apple.com
