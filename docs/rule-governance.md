@@ -183,7 +183,7 @@ still needs human confirmation.
   Surge's bundled parser. A mode-600 safe-baseline copy records the current
   verified state for future recovery.
 - `surge-cli reload` succeeded. The runtime and formal profile expose the same
-  73 proxy names and 45 policy-group names; neither contains AI Egress or the
+  73 proxy names and 46 policy-group names; neither contains AI Egress or the
   removed BYOIP policies.
 - The effective profile retains `PROCESS-NAME,assistantd`, uses `FINAL,🧭 Final`,
   retains the `dns-failed` fallback modifier, and keeps My Node as the Final
@@ -191,7 +191,7 @@ still needs human confirmation.
 - Persisted selections using the retired `🇺🇲 US Node` spelling were migrated.
   Apple Intelligence now selects `🇺🇸 US Node`; Other AI selects Auto Selection.
 - Direct-AI responded to a live TCP policy probe. CF-AI-Auto, US Node and Auto
-  Selection each returned an available member during group probes, and all 35
+  Selection each returned an available member during group probes, and all 36
   external resources reported ready after reload.
 - Direct-AI and the currently selected CF-AI member both failed Surge's UDP
   policy probe with a STUN timeout. OpenAI documents UDP 3478 as the preferred
@@ -215,16 +215,17 @@ end-to-end verified.
 - The reviewed functional source release is
   `1d37920dc7bd3a274a6dc45887cba0a97ab610f9`; the prior published runtime-
   evidence checkpoint is `a2bc14aa635dec6b8aa4c496a4f678737a9fd283`.
-  The current release head is deliberately verified with `git ls-remote` and
-  its Actions run instead of embedding a self-referential SHA in the commit
-  that contains this document.
-- The final local gate passed 75 unit tests, validated 19 files containing 67
+  Apple News restoration started at
+  `1bf9d82e191344c33b94f45cd921f4edebcb1097`. The current release head is
+  deliberately verified with `git ls-remote` and its Actions run instead of
+  embedding a self-referential SHA in the commit that contains this document.
+- The final local gate passed 79 unit tests, validated 20 files containing 77
   production rules, and confirmed that the current official OpenAI Voice feed
   contains 23 global host prefixes. iOS validates as 73 proxies / 41 groups /
-  37 active rules; macOS validates as 73 / 45 / 44. Both workspace profiles and
+  37 active rules; macOS validates as 73 / 46 / 45. Both workspace profiles and
   both formal iCloud profiles passed the bundled Surge parser and the
   profile-contract validator.
-- After the macOS reload, all 35 external resources reported `ready=true`. The
+- After the macOS reload, all 36 external resources reported `ready=true`. The
   effective order is ProxyGFW, GEOIP,CN, the mainland IPv6 supplement, optional
   filters and `FINAL,...,dns-failed`; no active process-wide DIRECT rule exists.
 - A local HTTP-proxy probe to one exact address from OpenAI's current Voice feed
