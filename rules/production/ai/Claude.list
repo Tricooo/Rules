@@ -1,10 +1,89 @@
-# Purpose: Anthropic Claude service-owned domains only.
+# Purpose: Broad coverage for Claude, Claude Desktop, and Claude Code.
 # Sources: https://code.claude.com/docs/en/desktop#network-access-requirements
+# https://code.claude.com/docs/en/network-config#network-access-requirements
+# https://platform.claude.com/docs/en/api/ip-addresses
 # https://github.com/VPSDance/ai-proxy-rules/blob/main/rules/surge/anthropic.list
+# https://github.com/erwanjun/surge-claude-rules/blob/main/Surge/Claude.list
+# https://github.com/ma-wenqian/ai-proxy-rules/blob/main/rules/claude.list
 # Last reviewed: 2026-11-12
+
+# Claude, Anthropic, and MCP product domains
 DOMAIN-SUFFIX,anthropic.com
+DOMAIN-SUFFIX,anthropic.com.cn
+DOMAIN-SUFFIX,antspace.dev
+DOMAIN-SUFFIX,clau.de
 DOMAIN-SUFFIX,claude.ai
 DOMAIN-SUFFIX,claude.app
 DOMAIN-SUFFIX,claude.com
+DOMAIN-SUFFIX,claude.new
+DOMAIN-SUFFIX,claude.site
+DOMAIN-SUFFIX,claudemcpclient.com
 DOMAIN-SUFFIX,claudemcpcontent.com
+DOMAIN-SUFFIX,claudepages.dev
+DOMAIN-SUFFIX,claudestudio.com
 DOMAIN-SUFFIX,claudeusercontent.com
+DOMAIN-SUFFIX,modelcontextprotocol.com
+DOMAIN-SUFFIX,modelcontextprotocol.io
+DOMAIN-SUFFIX,modelcontextprotocol.net
+DOMAIN-SUFFIX,modelcontextprotocol.org
+
+# Claude-specific hosts and community-reported dependencies
+DOMAIN,anthropic-com.ghost.io
+DOMAIN,anthropic.auth0.com
+DOMAIN,anthropic.com.cdn.cloudflare.net
+DOMAIN,servd-anthropic-website.b-cdn.net
+DOMAIN-SUFFIX,ant.dev
+DOMAIN-SUFFIX,anthropic.team
+DOMAIN-SUFFIX,chatbotclaude.com
+DOMAIN-SUFFIX,claude.dev
+DOMAIN-SUFFIX,claudeacademy.com
+DOMAIN-SUFFIX,interface.feedback
+DOMAIN-SUFFIX,lcicat.org
+DOMAIN-SUFFIX,lcicollections.org
+DOMAIN-SUFFIX,mcpservertest.online
+DOMAIN-SUFFIX,muthos.com
+DOMAIN-SUFFIX,sillylittleguy.org
+
+# Shared dependencies for plugins, installation, updates, and artifacts
+DOMAIN,cdnjs.cloudflare.com
+DOMAIN,cdn.jsdelivr.net
+DOMAIN,fonts.googleapis.com
+DOMAIN,fonts.gstatic.com
+DOMAIN,formulae.brew.sh
+DOMAIN,github.com
+DOMAIN,raw.githubusercontent.com
+DOMAIN,registry.npmjs.org
+DOMAIN,storage.googleapis.com
+DOMAIN,unpkg.com
+DOMAIN-WILDCARD,*-review.googlesource.com
+
+# Shared telemetry, feature flags, fraud checks, and support
+DOMAIN,browser-intake-us5-datadoghq.com
+DOMAIN,cdn.growthbook.io
+DOMAIN,cdn.usefathom.com
+DOMAIN,http-intake.logs.us5.datadoghq.com
+DOMAIN-SUFFIX,intercom.io
+DOMAIN-SUFFIX,intercomcdn.com
+DOMAIN-SUFFIX,segment.com
+DOMAIN-SUFFIX,segment.io
+DOMAIN-SUFFIX,sentry.io
+DOMAIN-SUFFIX,statsigapi.net
+DOMAIN-KEYWORD,datadog
+DOMAIN-KEYWORD,sentry
+DOMAIN-KEYWORD,sift
+
+# Additional hostname matches
+DOMAIN-KEYWORD,anthropic
+DOMAIN-KEYWORD,claude
+
+# macOS Desktop, its helper executables, and native Claude Code installs
+PROCESS-NAME,/Applications/Claude.app/
+PROCESS-NAME,/Users/*/.local/share/claude/versions/*
+PROCESS-NAME,Claude
+PROCESS-NAME,claude
+
+# Anthropic networks for connections to IP destinations
+IP-CIDR,153.61.224.0/22,no-resolve
+IP-CIDR,160.79.104.0/21,no-resolve
+IP-CIDR6,2607:6bc0::/32,no-resolve
+IP-ASN,399358,no-resolve

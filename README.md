@@ -25,7 +25,7 @@ migrated.
 
 ~~~text
 rules/
-  production/ai/   # narrow, service-owned domains used by production profiles
+  production/ai/   # per-service rules used by production profiles
   candidates/      # observations and rejected broad domains; never auto-loaded
 docs/               # governance and migration rationale
 script/             # legacy Sub-Store helpers
@@ -72,9 +72,10 @@ rule type has been checked for Surge compatibility.
 
 1. Put a new observation in rules/candidates or a Markdown evidence note.
 2. Confirm the hostname in Surge request logs on both Wi-Fi and cellular where
-   relevant.
-3. Prove that the hostname is service-specific. Shared analytics, feature flag,
-   CDN and generic API domains stay out of production.
+   relevant. For Claude dependencies, also use documented endpoint lists.
+3. Keep AI rules service-specific. The Claude rules include documented and
+   community-reported shared dependencies to prioritize coverage. See the
+   [Claude coverage policy](docs/rule-governance.md#claude-coverage-policy).
 4. Run python3 -m unittest discover -s tests -v and python3 scripts/validate_rules.py.
    The suite also verifies that every supported legacy AI mirror has the same
    active rules as its production source.

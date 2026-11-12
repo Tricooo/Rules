@@ -22,9 +22,9 @@ LEGACY_ACTIVE = [
     ROOT / "Direct.list",
 ]
 
-DOMAIN_TYPES = {"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD"}
+DOMAIN_TYPES = {"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-WILDCARD"}
 IP_TYPES = {"IP-CIDR", "IP-CIDR6"}
-OTHER_TYPES = {"GEOIP", "PROCESS-NAME", "URL-REGEX"}
+OTHER_TYPES = {"GEOIP", "IP-ASN", "PROCESS-NAME", "URL-REGEX"}
 ALLOWED_TYPES = DOMAIN_TYPES | IP_TYPES | OTHER_TYPES
 
 DANGEROUS_AI_SUFFIXES = {
@@ -48,6 +48,11 @@ DANGEROUS_AI_SUFFIXES = {
     "sentry.io",
     "stripe.com",
 }
+CLAUDE_RULE_FILES = {
+    PRODUCTION_ROOT / "ai" / "Claude.list",
+    ROOT / "AI" / "Claude.list",
+}
+CLAUDE_SHARED_SUFFIXES = {"intercom.io", "intercomcdn.com", "segment.io", "sentry.io"}
 
 
 def error(errors: list[str], path: Path, line_no: int | None, message: str) -> None:
@@ -59,6 +64,7 @@ def error(errors: list[str], path: Path, line_no: int | None, message: str) -> N
 def validate_file(path: Path, require_metadata: bool) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     normalized_rules: list[str] = []
+    allowed_shared_suffixes = CLAUDE_SHARED_SUFFIXES if path in CLAUDE_RULE_FILES else set()
     data = path.read_bytes()
 
     if not data.endswith(b"\n"):
@@ -108,7 +114,7 @@ def validate_file(path: Path, require_metadata: bool) -> tuple[list[str], list[s
             if len(fields) != 2:
                 error(errors, path, line_no, "rule-set entry must contain condition only, not a policy")
                 continue
-        elif rule_type in IP_TYPES | {"GEOIP"}:
+        elif rule_type in IP_TYPES | {"GEOIP", "IP-ASN"}:
             if len(fields) not in (2, 3):
                 error(errors, path, line_no, "invalid field count")
                 continue
@@ -121,7 +127,7 @@ def validate_file(path: Path, require_metadata: bool) -> tuple[list[str], list[s
             error(errors, path, line_no, "empty rule condition")
             continue
 
-        if rule_type in {"DOMAIN", "DOMAIN-SUFFIX"}:
+        if rule_type in {"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-WILDCARD"}:
             domain = condition.lower().rstrip(".")
             if any(char.isspace() for char in domain) or "/" in domain or ":" in domain:
                 error(errors, path, line_no, f"invalid domain {condition}")
@@ -129,9 +135,9 @@ def validate_file(path: Path, require_metadata: bool) -> tuple[list[str], list[s
                 error(errors, path, line_no, "domains must be lowercase without a trailing dot")
             if rule_type == "DOMAIN":
                 exact_domains.append((domain, line_no))
-            else:
+            elif rule_type == "DOMAIN-SUFFIX":
                 suffix_domains.append((domain, line_no))
-                if domain in DANGEROUS_AI_SUFFIXES:
+                if domain in DANGEROUS_AI_SUFFIXES and domain not in allowed_shared_suffixes:
                     error(errors, path, line_no, f"dangerously broad suffix {domain}")
 
         if rule_type in IP_TYPES:
@@ -143,6 +149,14 @@ def validate_file(path: Path, require_metadata: bool) -> tuple[list[str], list[s
                     raise ValueError("expected IPv6")
             except ValueError as exc:
                 error(errors, path, line_no, f"invalid CIDR {condition}: {exc}")
+
+        if rule_type == "IP-ASN" and not (
+            condition.isascii()
+            and condition.isdecimal()
+            and len(condition) <= 10
+            and 0 < int(condition) <= 4294967295
+        ):
+            error(errors, path, line_no, f"invalid ASN {condition}")
 
         normalized = ",".join([rule_type, *fields[1:]])
         if normalized in seen:

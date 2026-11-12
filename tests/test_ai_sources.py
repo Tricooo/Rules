@@ -3,8 +3,10 @@ from __future__ import annotations
 import ipaddress
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.sync_chatgpt_voice import ensure_not_rollback, extract_networks, render
+from scripts.validate_rules import validate_file
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +22,16 @@ def active_rules(name: str) -> tuple[str, ...]:
 
 
 class AISourceTest(unittest.TestCase):
+    def test_shared_suffix_exception_is_specific_to_claude(self) -> None:
+        for root in (AI_ROOT, ROOT / "AI"):
+            with self.subTest(root=root):
+                with patch.object(Path, "read_bytes", return_value=b"DOMAIN-SUFFIX,sentry.io\n"):
+                    claude_errors, _ = validate_file(root / "Claude.list", require_metadata=False)
+                    chatgpt_errors, _ = validate_file(root / "ChatGPT.list", require_metadata=False)
+                self.assertEqual([], claude_errors)
+                self.assertEqual(1, len(chatgpt_errors))
+                self.assertIn("dangerously broad suffix sentry.io", chatgpt_errors[0])
+
     def test_chatgpt_domains_are_service_owned(self) -> None:
         self.assertEqual(
             {

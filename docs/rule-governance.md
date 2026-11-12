@@ -13,8 +13,8 @@ community list. It must have a clear owner, narrow scope and a rollback path.
 2. Exact service domains precede generic Apple, Google and proxy rules.
 3. Domestic direct coverage is a maintained baseline, not a growing collection
    of one-off application patches.
-4. Shared telemetry, CDN, analytics and feature-flag domains never define an AI
-   policy.
+4. Keep AI policies service-specific by default. The
+   [Claude coverage policy](#claude-coverage-policy) includes shared dependencies.
 5. Apple Intelligence candidates stay disabled until a Surge request log ties
    them to a real Siri or Apple Intelligence action.
 6. iOS and macOS share rule sources, but keep separate policy names and
@@ -272,6 +272,34 @@ evidence.
   and [Anthropic list](https://github.com/VPSDance/ai-proxy-rules/blob/main/rules/surge/anthropic.list).
   The probes verified the pre-change routing decisions. Application behavior
   can be verified after the rules are published.
+
+## Claude coverage policy
+
+The Claude strategy prioritizes matching Claude-related traffic. The rule set
+covers web and API destinations, Desktop and Claude Code, and the documented
+dependencies for authentication, plugins, updates, MCP, previews and artifacts.
+The broader VPSDance address ranges cover Anthropic's documented inbound
+prefixes with the addition of `153.61.224.0/22`. IP rules use `no-resolve` to
+avoid forcing a DNS lookup for each unrelated hostname.
+
+Keep Claude's rule-set reference ahead of the general GitHub and proxy
+rules. Shared hosts such as `github.com`, `raw.githubusercontent.com`,
+`registry.npmjs.org`, `storage.googleapis.com` and the listed CDNs, as well as
+hosts matching the telemetry keywords, can send other apps' traffic to the
+Claude policy. The shared suffix exceptions in the validator apply to the
+production Claude list and its compatibility mirror.
+
+Surge Mac also matches the Claude Desktop bundle and the native Claude Code
+executable, including the versioned install path. Surge iOS ignores process
+rules and uses the hostname and IP rules. Custom providers, user-defined MCP
+servers and outbound traffic from Anthropic's servers depend on their actual
+destinations and whether the traffic passes through this Surge instance.
+
+Sources include the [Claude Code network requirements](https://code.claude.com/docs/en/network-config#network-access-requirements),
+[Desktop network requirements](https://code.claude.com/docs/en/desktop#network-access-requirements),
+[Anthropic inbound addresses](https://platform.claude.com/docs/en/api/ip-addresses#inbound-ip-addresses),
+[VPSDance's provider rules](https://github.com/VPSDance/ai-proxy-rules/blob/main/rules/surge/anthropic.list),
+and [the Surge process rule reference](https://manual.nssurge.com/rules/process.html).
 
 ## Release and rollback
 
