@@ -1,7 +1,10 @@
 # Purpose: Anthropic Claude service-owned domains only.
-# Source: https://www.anthropic.com/ and long-term client observations.
-# Last reviewed: 2026-07-14
+# Sources: https://code.claude.com/docs/en/desktop#network-access-requirements
+# https://github.com/VPSDance/ai-proxy-rules/blob/main/rules/surge/anthropic.list
+# Last reviewed: 2026-11-12
 DOMAIN-SUFFIX,anthropic.com
 DOMAIN-SUFFIX,claude.ai
+DOMAIN-SUFFIX,claude.app
 DOMAIN-SUFFIX,claude.com
+DOMAIN-SUFFIX,claudemcpcontent.com
 DOMAIN-SUFFIX,claudeusercontent.com

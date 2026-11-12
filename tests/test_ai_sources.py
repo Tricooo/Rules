@@ -23,6 +23,7 @@ class AISourceTest(unittest.TestCase):
     def test_chatgpt_domains_are_service_owned(self) -> None:
         self.assertEqual(
             {
+                "DOMAIN,chat.com",
                 "DOMAIN-SUFFIX,chatgpt.com",
                 "DOMAIN-SUFFIX,oaistatic.com",
                 "DOMAIN-SUFFIX,oaistatsig.com",

@@ -1,10 +1,12 @@
-# Purpose: OpenAI-owned domains required by ChatGPT and the OpenAI API.
-# Source: https://help.openai.com/en/articles/9247338-network-recommendations-for-chatgpt-errors-on-web-and-apps
+# Purpose: OpenAI-owned domains for ChatGPT, its redirect, and the OpenAI API.
+# Sources: https://help.openai.com/en/articles/9247338-network-recommendations-for-chatgpt-errors-on-web-and-apps
+# https://github.com/VPSDance/ai-proxy-rules/blob/main/rules/surge/openai.list
 # Shared providers from the official connectivity allowlist are intentionally excluded.
-# Last reviewed: 2026-07-15
+# Last reviewed: 2026-11-12
 DOMAIN-SUFFIX,chatgpt.com
 DOMAIN-SUFFIX,oaistatic.com
 DOMAIN-SUFFIX,oaistatsig.com
 DOMAIN-SUFFIX,oaiusercontent.com
 DOMAIN-SUFFIX,openai.com
 DOMAIN,cdn.openaimerge.com
+DOMAIN,chat.com

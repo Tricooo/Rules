@@ -1,6 +1,8 @@
 # Compatibility mirror. New profiles use rules/production/ai/Claude.list.
-# Last reviewed: 2026-07-14
+# Last reviewed: 2026-11-12
 DOMAIN-SUFFIX,anthropic.com
 DOMAIN-SUFFIX,claude.ai
+DOMAIN-SUFFIX,claude.app
 DOMAIN-SUFFIX,claude.com
+DOMAIN-SUFFIX,claudemcpcontent.com
 DOMAIN-SUFFIX,claudeusercontent.com

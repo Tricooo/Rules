@@ -258,6 +258,21 @@ the iPhone/iPad Recent Requests for representative domestic applications. Do
 not promote candidate Apple domains or add app-specific exceptions without that
 evidence.
 
+## ChatGPT redirect and Claude Desktop domains (2026-11-12)
+
+- A request to [chat.com](https://chat.com/) redirects to ChatGPT. The macOS
+  Surge request log matched the apex host against `ProxyGFWlist.list` and
+  selected `DIRECT`. The ChatGPT list now matches that exact hostname.
+- The [Claude Desktop network requirements](https://code.claude.com/docs/en/desktop#network-access-requirements)
+  list `claude.app` and subdomains of `claudemcpcontent.com`. macOS Surge
+  logged `claude.app`, `livepreview.claude.app`, and
+  `sandbox.claudemcpcontent.com` under `ProxyMedia.list`. The Claude list now
+  matches both suffixes, including dynamically generated preview hosts.
+- Candidate sources are VPSDance's [OpenAI list](https://github.com/VPSDance/ai-proxy-rules/blob/main/rules/surge/openai.list)
+  and [Anthropic list](https://github.com/VPSDance/ai-proxy-rules/blob/main/rules/surge/anthropic.list).
+  The probes verified the pre-change routing decisions. Application behavior
+  can be verified after the rules are published.
+
 ## Release and rollback
 
 - Production profiles point only to release.
